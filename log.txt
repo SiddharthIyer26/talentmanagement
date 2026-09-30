@@ -1,0 +1,19 @@
+
+  [32m[1mVITE[22m v5.4.21[39m  [2mready in [0m[1m1490[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.31.78:[1m5173[22m/[39m
+[2m2:27:44 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:28:11 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:28:19 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:28:26 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:28:35 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:28:46 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:29:10 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:29:29 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:29:33 am[22m [31m[1m[vite][22m[39m Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+[2m2:32:42 am[22m [36m[1m[vite][22m[39m [32m✨ new dependencies optimized: [33mreact-dom/client, lucide-react, recharts, jspdf, html2canvas[32m[39m
+[2m2:32:42 am[22m [36m[1m[vite][22m[39m [32m✨ optimized dependencies changed. reloading[39m
+[2m2:33:44 am[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css, /src/components/layout/Sidebar.tsx, /src/components/layout/Header.tsx, /src/components/views/InfluencerPortalView.tsx, /src/components/views/CampaignDetailModal.tsx, /src/components/layout/RoleSwitcher.tsx[22m
+[2m2:38:26 am[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/layout/Sidebar.tsx, /src/index.css[22m
+[2m2:38:30 am[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/layout/Sidebar.tsx, /src/index.css[22m
