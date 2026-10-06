@@ -1,5 +1,6 @@
 import { UserRole, Influencer, ManagementUser } from '../types';
 import { db } from './db';
+import { supabase, isSupabaseConfigured, authenticateOrRegisterAdmin, authenticateOrRegisterInfluencer } from './supabase';
 
 const AUTH_STORAGE_KEY = 'iyer_talent_os_auth_session_v2';
 
@@ -14,6 +15,7 @@ export interface AuthSession {
   influencerId?: string; // Active influencer ID being viewed
   primaryInfluencerId?: string; // Bound influencer ID for influencer account
   loggedInAt: string;
+  supabaseToken?: string;
 }
 
 class AuthService {
@@ -21,6 +23,7 @@ class AuthService {
 
   constructor() {
     this.session = this.loadSession();
+    this.checkCloudAuthSession();
   }
 
   private loadSession(): AuthSession {
@@ -47,6 +50,21 @@ class AuthService {
       name: '',
       loggedInAt: ''
     };
+  }
+
+  /**
+   * Validates and keeps Supabase Auth state in sync if cloud connection is active
+   */
+  private async checkCloudAuthSession() {
+    if (!isSupabaseConfigured() || !supabase) return;
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token && this.session.isAuthenticated) {
+        this.session.supabaseToken = data.session.access_token;
+      }
+    } catch (err) {
+      // Background check - ignore failures
+    }
   }
 
   public getSession(): AuthSession {
@@ -88,6 +106,22 @@ class AuthService {
 
       this.session = session;
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+
+      // Attempt background Supabase Auth synchronization
+      if (isSupabaseConfigured() && supabase && mgmtMatch.email) {
+        authenticateOrRegisterAdmin(mgmtMatch.email, cleanPass).then(async (res) => {
+          if (res.success && supabase) {
+            const { data } = await supabase.auth.getSession();
+            if (data?.session?.access_token) {
+              this.session.supabaseToken = data.session.access_token;
+              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(this.session));
+            }
+          }
+        }).catch(() => {
+          // Fallback gracefully without interrupting local session
+        });
+      }
+
       return { success: true, session };
     }
 
@@ -124,10 +158,53 @@ class AuthService {
 
       this.session = session;
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+
+      // Attempt background Supabase Auth synchronization
+      if (isSupabaseConfigured() && supabase && infMatch.email) {
+        authenticateOrRegisterInfluencer(infMatch.email, cleanPass, infMatch.id).then(async (res) => {
+          if (res.success && supabase) {
+            const { data } = await supabase.auth.getSession();
+            if (data?.session?.access_token) {
+              this.session.supabaseToken = data.session.access_token;
+              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(this.session));
+            }
+          }
+        }).catch(() => {
+          // Fallback gracefully without interrupting local session
+        });
+      }
+
       return { success: true, session };
     }
 
     return { success: false, message: 'No account found with this username or email.' };
+  }
+
+  /**
+   * Cloud direct login with Supabase Auth
+   */
+  public async loginWithCloudAuth(email: string, password: string): Promise<{ success: boolean; message?: string; session?: AuthSession }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      return this.login(email, password);
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error || !data.user) {
+        // Fallback to local credential verification
+        return this.login(email, password);
+      }
+
+      const syncResult = this.login(email, password);
+      if (syncResult.session && data.session?.access_token) {
+        syncResult.session.supabaseToken = data.session.access_token;
+        this.session.supabaseToken = data.session.access_token;
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(this.session));
+      }
+      return syncResult;
+    } catch (e: any) {
+      return this.login(email, password);
+    }
   }
 
   public logout() {
@@ -141,6 +218,10 @@ class AuthService {
       loggedInAt: ''
     };
     localStorage.removeItem(AUTH_STORAGE_KEY);
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase.auth.signOut().catch(() => {});
+    }
   }
 
   public getRole(): 'admin' | 'influencer' {
@@ -244,4 +325,3 @@ class AuthService {
 }
 
 export const authService = new AuthService();
-
