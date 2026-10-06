@@ -162,22 +162,37 @@ export async function authenticateOrRegisterInfluencer(
 }
 
 /**
- * Cloud sequence generator for atomic invoice numbering
+ * Cloud sequence generator for atomic annual invoice numbering per influencer
+ * Formats strictly as: [PREFIX]-[YEAR]-[0001]
  */
-export async function getNextCloudInvoiceSequence(fallbackSeq: number = 1000): Promise<number> {
+export async function getNextCloudInvoiceNumber(
+  influencerId: string,
+  year: number = new Date().getFullYear(),
+  fallbackNumber?: string
+): Promise<string> {
   if (!supabase || !isSupabaseConfigured()) {
-    return fallbackSeq + 1;
+    return fallbackNumber || `IN-${year}-0001`;
   }
 
   try {
-    const { data, error } = await supabase.rpc('get_next_invoice_seq', { p_initial: fallbackSeq });
-    if (!error && typeof data === 'number') {
+    const { data, error } = await supabase.rpc('get_next_invoice_number', {
+      p_influencer_id: influencerId,
+      p_year: year
+    });
+    if (!error && typeof data === 'string' && data) {
       return data;
     }
   } catch (err) {
-    console.warn('Supabase invoice sequence RPC error, falling back to local counter:', err);
+    console.warn('Supabase get_next_invoice_number notice, falling back:', err);
   }
 
+  return fallbackNumber || `IN-${year}-0001`;
+}
+
+/**
+ * Legacy sequence helper for backward compatibility
+ */
+export async function getNextCloudInvoiceSequence(fallbackSeq: number = 1000): Promise<number> {
   return fallbackSeq + 1;
 }
 
@@ -221,7 +236,7 @@ export async function migrateLocalStorageToSupabase(localData: DatabaseSchema): 
             email: u.email,
             phone: u.phone || null,
             username: u.username,
-            password: u.password,
+            password: null, // Cloud auth is managed by Supabase Auth (auth.users), not plaintext columns
             role: u.role || 'Talent Manager',
             account_status: u.accountStatus || 'active'
           })),
@@ -248,7 +263,7 @@ export async function migrateLocalStorageToSupabase(localData: DatabaseSchema): 
             phone: inf.phone || null,
             pan: inf.pan || null,
             username: inf.username,
-            password: inf.password,
+            password: null, // Cloud auth is managed by Supabase Auth (auth.users), not plaintext columns
             account_status: inf.accountStatus || 'active',
             address: inf.address || null,
             bank_details: inf.bankDetails || {},
@@ -429,20 +444,36 @@ export async function migrateLocalStorageToSupabase(localData: DatabaseSchema): 
       counts.notifications = localData.notifications.length;
     }
 
-    // 8. Sync Invoice Sequence Counter
-    if (typeof localData.invoiceSeqCounter === 'number') {
-      const { error: seqErr } = await supabase
-        .from('app_settings')
-        .upsert(
-          {
-            key: 'invoice_sequence',
-            value: { counter: localData.invoiceSeqCounter }
-          },
-          { onConflict: 'key' }
-        );
+    // 8. Sync Invoice Sequences per Influencer and Year
+    const currentYear = new Date().getFullYear();
+    const seqMap: { [key: string]: number } = {};
+    (localData.invoices || []).forEach(inv => {
+      if (inv.influencerId && inv.invoiceNumber) {
+        const parts = inv.invoiceNumber.split('-');
+        if (parts.length >= 3) {
+          const yr = parseInt(parts[1], 10) || currentYear;
+          const seq = parseInt(parts[2], 10) || 0;
+          const k = `${inv.influencerId}__${yr}`;
+          seqMap[k] = Math.max(seqMap[k] || 0, seq);
+        }
+      }
+    });
 
-      if (seqErr) throw new Error(`Sequence settings sync: ${seqErr.message}`);
-      counts.settings = 1;
+    const sequenceRows = Object.entries(seqMap).map(([k, maxSeq]) => {
+      const [infId, yrStr] = k.split('__');
+      return {
+        influencer_id: infId,
+        year: parseInt(yrStr, 10),
+        last_sequence: maxSeq
+      };
+    });
+
+    if (sequenceRows.length > 0) {
+      const { error: seqErr } = await supabase
+        .from('invoice_sequences')
+        .upsert(sequenceRows, { onConflict: 'influencer_id,year' });
+      if (seqErr) console.warn('Invoice sequence sync notice:', seqErr.message);
+      counts.invoiceSequences = sequenceRows.length;
     }
 
     return {
