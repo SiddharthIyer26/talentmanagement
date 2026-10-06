@@ -99,29 +99,48 @@ CREATE TABLE IF NOT EXISTS public.expenses (
 -- ==============================================================================
 
 CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+STABLE
+AS $$
+DECLARE
+  current_email TEXT;
 BEGIN
   -- Safe bootstrap: if management_users table is empty, allow authenticated user to initialize/seed data
   IF NOT EXISTS (SELECT 1 FROM public.management_users) THEN
     RETURN (auth.role() = 'authenticated');
   END IF;
 
-  RETURN (
-    coalesce(auth.jwt()->'app_metadata'->>'role', '') = 'ADMIN'
-    OR coalesce(auth.jwt()->'user_metadata'->>'role', '') = 'ADMIN'
-    OR coalesce(current_setting('request.jwt.claims', true)::jsonb->>'role', '') = 'ADMIN'
-    OR EXISTS (
-      SELECT 1 FROM public.management_users
-      WHERE email = coalesce(auth.jwt()->>'email', '') AND account_status = 'active'
-    )
+  IF coalesce(auth.jwt()->'app_metadata'->>'role', '') = 'ADMIN'
+     OR coalesce(auth.jwt()->'user_metadata'->>'role', '') = 'ADMIN'
+     OR coalesce(current_setting('request.jwt.claims', true)::jsonb->>'role', '') = 'ADMIN' THEN
+    RETURN TRUE;
+  END IF;
+
+  current_email := coalesce(auth.email(), auth.jwt()->>'email', '');
+  IF current_email = '' THEN
+    RETURN FALSE;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.management_users
+    WHERE LOWER(email) = LOWER(current_email) AND account_status = 'active'
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$;
 
 CREATE OR REPLACE FUNCTION public.current_influencer_id()
-RETURNS TEXT AS $$
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+STABLE
+AS $$
 DECLARE
   inf_id TEXT;
+  current_email TEXT;
 BEGIN
   inf_id := coalesce(auth.jwt()->'user_metadata'->>'influencer_id', '');
   IF inf_id <> '' THEN
@@ -133,13 +152,39 @@ BEGIN
     RETURN inf_id;
   END IF;
 
-  SELECT id INTO inf_id FROM public.influencers
-  WHERE email = coalesce(auth.jwt()->>'email', '') AND account_status = 'active'
-  LIMIT 1;
+  current_email := coalesce(auth.email(), auth.jwt()->>'email', '');
+  IF current_email <> '' THEN
+    SELECT id INTO inf_id FROM public.influencers
+    WHERE LOWER(email) = LOWER(current_email) AND account_status = 'active'
+    LIMIT 1;
+  END IF;
 
   RETURN coalesce(inf_id, '');
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$;
+
+-- Secure helper function for authenticated users to safely resolve their own management profile
+CREATE OR REPLACE FUNCTION public.get_current_management_user()
+RETURNS SETOF public.management_users
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+STABLE
+AS $$
+DECLARE
+  current_email TEXT;
+BEGIN
+  current_email := coalesce(auth.email(), auth.jwt()->>'email', '');
+  IF current_email = '' THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT * FROM public.management_users
+  WHERE LOWER(email) = LOWER(current_email) AND account_status = 'active'
+  LIMIT 1;
+END;
+$$;
 
 -- ==============================================================================
 -- 5. SECURE VIEWS (Depends on public.brands and public.is_admin())
@@ -448,7 +493,18 @@ ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoice_sequences ENABLE ROW LEVEL SECURITY;
 
--- 10.1 MANAGEMENT USERS: Only authenticated Admins can view and manage admin team accounts
+-- 10.1 MANAGEMENT USERS:
+-- Authenticated users can safely view their own management profile without recursive RLS
+DROP POLICY IF EXISTS mgmt_users_select_own ON public.management_users;
+CREATE POLICY mgmt_users_select_own ON public.management_users
+  FOR SELECT TO authenticated
+  USING (
+    LOWER(email) = LOWER(coalesce(auth.email(), auth.jwt()->>'email', ''))
+    AND account_status = 'active'
+  );
+
+-- Admins can view and manage all management team accounts
+DROP POLICY IF EXISTS admin_mgmt_users_all ON public.management_users;
 CREATE POLICY admin_mgmt_users_all ON public.management_users
   FOR ALL TO authenticated
   USING (public.is_admin())
@@ -457,15 +513,21 @@ CREATE POLICY admin_mgmt_users_all ON public.management_users
 -- 10.2 INFLUENCERS:
 -- - Admins have full access
 -- - Influencers can view and update their own profile (trigger guards sensitive fields)
+DROP POLICY IF EXISTS admin_influencers_all ON public.influencers;
 CREATE POLICY admin_influencers_all ON public.influencers
   FOR ALL TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS influencer_view_own_profile ON public.influencers;
 CREATE POLICY influencer_view_own_profile ON public.influencers
   FOR SELECT TO authenticated
-  USING (id = public.current_influencer_id());
+  USING (
+    id = public.current_influencer_id()
+    OR (LOWER(email) = LOWER(coalesce(auth.email(), auth.jwt()->>'email', '')) AND account_status = 'active')
+  );
 
+DROP POLICY IF EXISTS influencer_update_own_profile ON public.influencers;
 CREATE POLICY influencer_update_own_profile ON public.influencers
   FOR UPDATE TO authenticated
   USING (id = public.current_influencer_id())
@@ -473,6 +535,7 @@ CREATE POLICY influencer_update_own_profile ON public.influencers
 
 -- 10.3 BRANDS: Strictly Admin-only for all operations (SELECT, INSERT, UPDATE, DELETE).
 -- Influencers have NO direct table access to public.brands and must query the masked public.brands_directory view.
+DROP POLICY IF EXISTS admin_brands_all ON public.brands;
 CREATE POLICY admin_brands_all ON public.brands
   FOR ALL TO authenticated
   USING (public.is_admin())
@@ -482,15 +545,18 @@ CREATE POLICY admin_brands_all ON public.brands
 -- - Admins have full access
 -- - Influencers can view only their own collaborations
 -- - Influencers can update only metrics & live links on their own collaborations (trigger guards commercials)
+DROP POLICY IF EXISTS admin_campaigns_all ON public.campaigns;
 CREATE POLICY admin_campaigns_all ON public.campaigns
   FOR ALL TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS influencer_view_own_campaigns ON public.campaigns;
 CREATE POLICY influencer_view_own_campaigns ON public.campaigns
   FOR SELECT TO authenticated
   USING (influencer_id = public.current_influencer_id());
 
+DROP POLICY IF EXISTS influencer_update_metrics ON public.campaigns;
 CREATE POLICY influencer_update_metrics ON public.campaigns
   FOR UPDATE TO authenticated
   USING (influencer_id = public.current_influencer_id())
@@ -499,16 +565,19 @@ CREATE POLICY influencer_update_metrics ON public.campaigns
 -- 10.5 INVOICES:
 -- - Admins have full access
 -- - Influencers can view only their own invoices
+DROP POLICY IF EXISTS admin_invoices_all ON public.invoices;
 CREATE POLICY admin_invoices_all ON public.invoices
   FOR ALL TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS influencer_view_own_invoices ON public.invoices;
 CREATE POLICY influencer_view_own_invoices ON public.invoices
   FOR SELECT TO authenticated
   USING (influencer_id = public.current_influencer_id());
 
 -- 10.6 EXPENSES: Only authenticated Admins can view and manage expenses
+DROP POLICY IF EXISTS admin_expenses_all ON public.expenses;
 CREATE POLICY admin_expenses_all ON public.expenses
   FOR ALL TO authenticated
   USING (public.is_admin())
@@ -517,11 +586,13 @@ CREATE POLICY admin_expenses_all ON public.expenses
 -- 10.7 NOTIFICATIONS:
 -- - Admins have full access
 -- - Influencers can view only notifications attached to their campaigns
+DROP POLICY IF EXISTS admin_notifications_all ON public.notifications;
 CREATE POLICY admin_notifications_all ON public.notifications
   FOR ALL TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS influencer_view_own_notifications ON public.notifications;
 CREATE POLICY influencer_view_own_notifications ON public.notifications
   FOR SELECT TO authenticated
   USING (
@@ -533,6 +604,7 @@ CREATE POLICY influencer_view_own_notifications ON public.notifications
   );
 
 -- 10.8 INVOICE SEQUENCES: Only authenticated Admins have direct table access; generator function is SECURITY DEFINER
+DROP POLICY IF EXISTS admin_invoice_sequences_all ON public.invoice_sequences;
 CREATE POLICY admin_invoice_sequences_all ON public.invoice_sequences
   FOR ALL TO authenticated
   USING (public.is_admin())

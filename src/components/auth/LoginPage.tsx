@@ -25,7 +25,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     return 'Good Evening, Welcome Back';
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -34,23 +34,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       return;
     }
 
-    // Start 1.2s loading animation sequence
+    // Start loading animation sequence
     setIsLoading(true);
-    setProgressPercent(20);
-    setLoadingStep('Authenticating Credentials...');
+    setProgressPercent(25);
+    setLoadingStep('Authenticating with Supabase Auth...');
 
-    setTimeout(() => {
+    const timer1 = setTimeout(() => {
       setProgressPercent(60);
       setLoadingStep('Verifying Access Control...');
-    }, 400);
+    }, 350);
 
-    setTimeout(() => {
-      setProgressPercent(90);
+    const timer2 = setTimeout(() => {
+      setProgressPercent(85);
       setLoadingStep('Loading Security Permissions...');
-    }, 800);
+    }, 700);
 
-    setTimeout(() => {
-      const result = authService.login(username, password);
+    try {
+      const result = await authService.login(username, password);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+
       if (result.success) {
         setProgressPercent(100);
         setLoadingStep('Access Granted! Redirecting...');
@@ -62,7 +65,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         setIsLoading(false);
         setErrorMessage(result.message || 'Invalid username or password.');
       }
-    }, 1100);
+    } catch (err: any) {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      setIsLoading(false);
+      setErrorMessage(err?.message || 'Authentication error.');
+    }
   };
 
   return (

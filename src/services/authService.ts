@@ -1,6 +1,6 @@
 import { UserRole, Influencer, ManagementUser } from '../types';
 import { db } from './db';
-import { supabase, isSupabaseConfigured, authenticateOrRegisterAdmin, authenticateOrRegisterInfluencer } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 const AUTH_STORAGE_KEY = 'iyer_talent_os_auth_session_v2';
 
@@ -22,11 +22,10 @@ class AuthService {
   private session: AuthSession;
 
   constructor() {
-    this.session = this.loadSession();
-    this.checkCloudAuthSession();
+    this.session = this.loadStoredSession();
   }
 
-  private loadSession(): AuthSession {
+  private loadStoredSession(): AuthSession {
     try {
       const stored = localStorage.getItem(AUTH_STORAGE_KEY);
       if (stored) {
@@ -39,7 +38,7 @@ class AuthService {
         }
       }
     } catch (e) {
-      console.error('Failed to load auth session', e);
+      console.error('Failed to load auth session from storage', e);
     }
     return {
       isAuthenticated: false,
@@ -53,17 +52,147 @@ class AuthService {
   }
 
   /**
-   * Validates and keeps Supabase Auth state in sync if cloud connection is active
+   * Resets local memory and storage to an unauthenticated state
    */
-  private async checkCloudAuthSession() {
-    if (!isSupabaseConfigured() || !supabase) return;
+  public clearSession(): void {
+    this.session = {
+      isAuthenticated: false,
+      role: 'ADMIN',
+      originalRole: 'ADMIN',
+      userId: '',
+      username: '',
+      name: '',
+      loggedInAt: ''
+    };
     try {
-      const { data } = await supabase.auth.getSession();
-      if (data?.session?.access_token && this.session.isAuthenticated) {
-        this.session.supabaseToken = data.session.access_token;
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  /**
+   * Validates the active Supabase Auth session on app launch/refresh.
+   * Guarantees unauthenticated users never see the dashboard.
+   */
+  public async initSession(): Promise<AuthSession> {
+    if (!isSupabaseConfigured() || !supabase) {
+      this.clearSession();
+      return this.session;
+    }
+
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session || !session.user) {
+        this.clearSession();
+        return this.session;
       }
+
+      const authEmail = (session.user.email || '').toLowerCase().trim();
+      if (!authEmail) {
+        this.clearSession();
+        return this.session;
+      }
+
+      // 1. Resolve management_users record (via secure RPC helper first, then direct table query)
+      let mgmtUser: any = null;
+      try {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('get_current_management_user');
+        if (!rpcErr && rpcData) {
+          mgmtUser = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        }
+      } catch {
+        // Fall back to direct query
+      }
+
+      if (!mgmtUser) {
+        const { data: tableData, error: mgmtErr } = await supabase
+          .from('management_users')
+          .select('*')
+          .ilike('email', authEmail)
+          .maybeSingle();
+
+        if (mgmtErr) {
+          console.warn('Notice querying management_users:', mgmtErr.message);
+        }
+        mgmtUser = tableData;
+      }
+
+      if (mgmtUser) {
+        if (mgmtUser.account_status === 'disabled') {
+          await this.logout();
+          return this.session;
+        }
+
+        const validSession: AuthSession = {
+          isAuthenticated: true,
+          role: 'ADMIN',
+          originalRole: 'ADMIN',
+          userId: mgmtUser.id,
+          username: mgmtUser.username || mgmtUser.email,
+          name: mgmtUser.name,
+          avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+          loggedInAt: this.session.loggedInAt || new Date().toISOString(),
+          supabaseToken: session.access_token
+        };
+
+        this.session = validSession;
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(validSession));
+
+        // Keep local memory db synchronized
+        db.saveManagementUser({
+          id: mgmtUser.id,
+          name: mgmtUser.name,
+          email: mgmtUser.email,
+          phone: mgmtUser.phone || '',
+          username: mgmtUser.username,
+          password: '',
+          role: mgmtUser.role,
+          accountStatus: mgmtUser.account_status || 'active'
+        });
+
+        return this.session;
+      }
+
+      // 2. Query influencers table
+      const { data: infUser, error: infErr } = await supabase
+        .from('influencers')
+        .select('*')
+        .ilike('email', authEmail)
+        .maybeSingle();
+
+      if (!infErr && infUser) {
+        if (infUser.account_status === 'disabled') {
+          await this.logout();
+          return this.session;
+        }
+
+        const validSession: AuthSession = {
+          isAuthenticated: true,
+          role: 'INFLUENCER',
+          originalRole: 'INFLUENCER',
+          userId: infUser.id,
+          username: infUser.username || infUser.handle,
+          name: infUser.name,
+          influencerId: infUser.id,
+          primaryInfluencerId: infUser.id,
+          avatarUrl: infUser.avatar_url,
+          loggedInAt: this.session.loggedInAt || new Date().toISOString(),
+          supabaseToken: session.access_token
+        };
+
+        this.session = validSession;
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(validSession));
+        return this.session;
+      }
+
+      // Authenticated with Supabase Auth, but no workspace user found
+      await this.logout();
+      return this.session;
     } catch (err) {
-      // Background check - ignore failures
+      console.error('Session initialization error:', err);
+      this.clearSession();
+      return this.session;
     }
   }
 
@@ -75,152 +204,211 @@ class AuthService {
     return this.session.isAuthenticated;
   }
 
-  public login(usernameOrEmail: string, passwordInput: string): { success: boolean; message?: string; session?: AuthSession } {
-    const cleanInput = usernameOrEmail.trim().toLowerCase();
-    const cleanPass = passwordInput.trim();
-
-    // 1. Check Management / Admin users first
-    const mgmtUsers = db.getManagementUsers();
-    const mgmtMatch = mgmtUsers.find(
-      u => u.username.toLowerCase() === cleanInput || u.email.toLowerCase() === cleanInput
-    );
-
-    if (mgmtMatch) {
-      if (mgmtMatch.accountStatus === 'disabled') {
-        return { success: false, message: 'Account access disabled. Please contact system administrator.' };
-      }
-      if (mgmtMatch.password !== cleanPass) {
-        return { success: false, message: 'Invalid password. Please check your credentials.' };
-      }
-
-      const session: AuthSession = {
-        isAuthenticated: true,
-        role: 'ADMIN',
-        originalRole: 'ADMIN',
-        userId: mgmtMatch.id,
-        username: mgmtMatch.username,
-        name: mgmtMatch.name,
-        avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
-        loggedInAt: new Date().toISOString()
-      };
-
-      this.session = session;
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
-
-      // Attempt background Supabase Auth synchronization
-      if (isSupabaseConfigured() && supabase && mgmtMatch.email) {
-        authenticateOrRegisterAdmin(mgmtMatch.email, cleanPass).then(async (res) => {
-          if (res.success && supabase) {
-            const { data } = await supabase.auth.getSession();
-            if (data?.session?.access_token) {
-              this.session.supabaseToken = data.session.access_token;
-              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(this.session));
-            }
-          }
-        }).catch(() => {
-          // Fallback gracefully without interrupting local session
-        });
-      }
-
-      return { success: true, session };
-    }
-
-    // 2. Check Influencer users
-    const influencers = db.getInfluencers();
-    const infMatch = influencers.find(inf => {
-      const cleanHandle = inf.handle.replace('@', '').toLowerCase();
-      const cleanUser = (inf.username || '').toLowerCase();
-      const cleanEmail = (inf.email || '').toLowerCase();
-      return cleanInput === cleanHandle || cleanInput === cleanUser || cleanInput === cleanEmail;
-    });
-
-    if (infMatch) {
-      if (infMatch.accountStatus === 'disabled') {
-        return { success: false, message: 'Influencer creator workspace disabled. Contact talent manager.' };
-      }
-      const actualPassword = infMatch.password || 'password123';
-      if (actualPassword !== cleanPass) {
-        return { success: false, message: 'Invalid password. Please check your credentials.' };
-      }
-
-      const session: AuthSession = {
-        isAuthenticated: true,
-        role: 'INFLUENCER',
-        originalRole: 'INFLUENCER',
-        userId: infMatch.id,
-        username: infMatch.username || infMatch.handle,
-        name: infMatch.name,
-        influencerId: infMatch.id,
-        primaryInfluencerId: infMatch.id,
-        avatarUrl: infMatch.avatarUrl,
-        loggedInAt: new Date().toISOString()
-      };
-
-      this.session = session;
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
-
-      // Attempt background Supabase Auth synchronization
-      if (isSupabaseConfigured() && supabase && infMatch.email) {
-        authenticateOrRegisterInfluencer(infMatch.email, cleanPass, infMatch.id).then(async (res) => {
-          if (res.success && supabase) {
-            const { data } = await supabase.auth.getSession();
-            if (data?.session?.access_token) {
-              this.session.supabaseToken = data.session.access_token;
-              localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(this.session));
-            }
-          }
-        }).catch(() => {
-          // Fallback gracefully without interrupting local session
-        });
-      }
-
-      return { success: true, session };
-    }
-
-    return { success: false, message: 'No account found with this username or email.' };
-  }
-
   /**
-   * Cloud direct login with Supabase Auth
+   * Authenticates against Supabase Auth only.
+   * Plain-text/localStorage passwords are never used for authentication.
    */
-  public async loginWithCloudAuth(email: string, password: string): Promise<{ success: boolean; message?: string; session?: AuthSession }> {
+  public async login(
+    usernameOrEmail: string,
+    passwordInput: string
+  ): Promise<{ success: boolean; message?: string; session?: AuthSession }> {
+    const cleanInput = (usernameOrEmail || '').trim().toLowerCase();
+    const cleanPass = (passwordInput || '').trim();
+
+    if (!cleanInput || !cleanPass) {
+      return { success: false, message: 'Please enter both username/email and password.' };
+    }
+
     if (!isSupabaseConfigured() || !supabase) {
-      return this.login(email, password);
+      return {
+        success: false,
+        message: 'Supabase authentication is not configured. Please verify VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+      };
+    }
+
+    // Resolve target email if user entered a username
+    let targetEmail = cleanInput;
+    if (!cleanInput.includes('@')) {
+      const mgmtUsers = db.getManagementUsers();
+      const mgmtMatch = mgmtUsers.find(
+        u => u.username.toLowerCase() === cleanInput || u.email.toLowerCase() === cleanInput
+      );
+      if (mgmtMatch && mgmtMatch.email) {
+        targetEmail = mgmtMatch.email.toLowerCase();
+      } else {
+        const influencers = db.getInfluencers();
+        const infMatch = influencers.find(inf => {
+          const cleanHandle = inf.handle.replace('@', '').toLowerCase();
+          const cleanUser = (inf.username || '').toLowerCase();
+          return cleanInput === cleanHandle || cleanInput === cleanUser;
+        });
+        if (infMatch && infMatch.email) {
+          targetEmail = infMatch.email.toLowerCase();
+        }
+      }
+    }
+
+    if (!targetEmail.includes('@')) {
+      return {
+        success: false,
+        message: 'Please enter your registered email address (e.g. siddharthiyer.work@gmail.com).'
+      };
     }
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error || !data.user) {
-        // Fallback to local credential verification
-        return this.login(email, password);
+      // 1. Authenticate strictly with Supabase Auth
+      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+        email: targetEmail,
+        password: cleanPass
+      });
+
+      if (authErr || !authData.user) {
+        return {
+          success: false,
+          message: authErr?.message || 'Invalid email or password. Please check your credentials.'
+        };
       }
 
-      const syncResult = this.login(email, password);
-      if (syncResult.session && data.session?.access_token) {
-        syncResult.session.supabaseToken = data.session.access_token;
-        this.session.supabaseToken = data.session.access_token;
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(this.session));
+      const authenticatedEmail = (authData.user.email || targetEmail).toLowerCase().trim();
+
+      // 2. Load authenticated user's management_users record
+      // Try secure RPC helper first, fall back to direct table query
+      let mgmtUser: any = null;
+      try {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('get_current_management_user');
+        if (!rpcErr && rpcData) {
+          mgmtUser = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        }
+      } catch {
+        // Fall back to direct query
       }
-      return syncResult;
-    } catch (e: any) {
-      return this.login(email, password);
+
+      if (!mgmtUser) {
+        const { data: tableData, error: mgmtErr } = await supabase
+          .from('management_users')
+          .select('*')
+          .ilike('email', authenticatedEmail)
+          .maybeSingle();
+
+        if (mgmtErr) {
+          console.warn('Notice querying management_users:', mgmtErr.message);
+        }
+        mgmtUser = tableData;
+      }
+
+      if (mgmtUser) {
+        if (mgmtUser.account_status === 'disabled') {
+          await supabase.auth.signOut();
+          this.clearSession();
+          return {
+            success: false,
+            message: 'Account access disabled. Please contact system administrator.'
+          };
+        }
+
+        // Owner/Admin gets full admin portal access
+        const adminSession: AuthSession = {
+          isAuthenticated: true,
+          role: 'ADMIN',
+          originalRole: 'ADMIN',
+          userId: mgmtUser.id,
+          username: mgmtUser.username || mgmtUser.email,
+          name: mgmtUser.name,
+          avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+          loggedInAt: new Date().toISOString(),
+          supabaseToken: authData.session?.access_token
+        };
+
+        this.session = adminSession;
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(adminSession));
+
+        // Sync management record into local app state (passwords never stored)
+        db.saveManagementUser({
+          id: mgmtUser.id,
+          name: mgmtUser.name,
+          email: mgmtUser.email,
+          phone: mgmtUser.phone || '',
+          username: mgmtUser.username,
+          password: '',
+          role: mgmtUser.role,
+          accountStatus: mgmtUser.account_status || 'active'
+        });
+
+        return { success: true, session: adminSession };
+      }
+
+      // 3. Fallback: Check if user is an Influencer
+      const { data: infUser, error: infErr } = await supabase
+        .from('influencers')
+        .select('*')
+        .ilike('email', authenticatedEmail)
+        .maybeSingle();
+
+      if (infErr) {
+        console.warn('Notice querying influencers:', infErr.message);
+      }
+
+      if (infUser) {
+        if (infUser.account_status === 'disabled') {
+          await supabase.auth.signOut();
+          this.clearSession();
+          return {
+            success: false,
+            message: 'Influencer creator workspace disabled. Contact talent manager.'
+          };
+        }
+
+        // Influencers only access their own creator portal
+        const influencerSession: AuthSession = {
+          isAuthenticated: true,
+          role: 'INFLUENCER',
+          originalRole: 'INFLUENCER',
+          userId: infUser.id,
+          username: infUser.username || infUser.handle,
+          name: infUser.name,
+          influencerId: infUser.id,
+          primaryInfluencerId: infUser.id,
+          avatarUrl: infUser.avatar_url,
+          loggedInAt: new Date().toISOString(),
+          supabaseToken: authData.session?.access_token
+        };
+
+        this.session = influencerSession;
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(influencerSession));
+
+        return { success: true, session: influencerSession };
+      }
+
+      // No registered profile found in schema
+      await supabase.auth.signOut();
+      this.clearSession();
+      return {
+        success: false,
+        message: 'No registered workspace profile found for this authenticated user.'
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Authentication error occurred.'
+      };
     }
   }
 
-  public logout() {
-    this.session = {
-      isAuthenticated: false,
-      role: 'ADMIN',
-      originalRole: 'ADMIN',
-      userId: '',
-      username: '',
-      name: '',
-      loggedInAt: ''
-    };
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+  /**
+   * Alias for backward compatibility
+   */
+  public async loginWithCloudAuth(email: string, password: string) {
+    return this.login(email, password);
+  }
 
+  public async logout(): Promise<void> {
+    this.clearSession();
     if (isSupabaseConfigured() && supabase) {
-      supabase.auth.signOut().catch(() => {});
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // Ignore signout network errors
+      }
     }
   }
 

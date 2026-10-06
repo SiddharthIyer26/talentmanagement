@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { authService } from './services/authService';
 import { db } from './services/db';
+import { isSupabaseConfigured, supabase } from './services/supabase';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { GlobalSearchModal } from './components/common/GlobalSearchModal';
@@ -33,6 +34,7 @@ import { CampaignDetailModal } from './components/views/CampaignDetailModal';
 export const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(authService.isAuthenticated());
   const [activeRole, setActiveRole] = useState<'admin' | 'influencer'>(authService.getRole());
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(isSupabaseConfigured());
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedAdminInfluencerId, setSelectedAdminInfluencerId] = useState<string>('all');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -55,6 +57,42 @@ export const App: React.FC = () => {
     setInvoiceInitialId(invoiceId);
     setActiveTab('invoice-generator');
   };
+
+  // Verify cloud session with Supabase Auth on launch/reload
+  useEffect(() => {
+    let isMounted = true;
+    if (isSupabaseConfigured()) {
+      authService.initSession().then(session => {
+        if (!isMounted) return;
+        setIsAuthenticated(session.isAuthenticated);
+        setActiveRole(authService.getRole());
+        setIsCheckingAuth(false);
+      }).catch(() => {
+        if (!isMounted) return;
+        setIsAuthenticated(false);
+        setIsCheckingAuth(false);
+      });
+    } else {
+      setIsCheckingAuth(false);
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Listen to live Supabase Auth state changes (e.g. token revocation, session expiry, external signout)
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !supabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        authService.clearSession();
+        setIsAuthenticated(false);
+      }
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Check Daily Welcome status when authenticating or loading session
   useEffect(() => {
@@ -93,8 +131,8 @@ export const App: React.FC = () => {
     forceRefresh();
   };
 
-  const handleLogout = () => {
-    authService.logout();
+  const handleLogout = async () => {
+    await authService.logout();
     setIsAuthenticated(false);
     setShowDailyWelcome(false);
   };
@@ -113,14 +151,23 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isAuthenticated]);
 
-  // STRICT REQUIREMENT 3 & 9: Zero public/guest access. If unauthenticated, ONLY render LoginPage.
+  // Loading gate while verifying cloud credentials against Supabase Auth
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-[#070a11] text-slate-100 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500/20 via-cyan-400/30 to-indigo-600/30 border border-cyan-400/40 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+            <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <div className="text-xs font-mono text-cyan-400 tracking-wider">VERIFYING SECURE SESSION...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // STRICT REQUIREMENT 3 & 6: Zero public/guest access. Unauthenticated users must never see the dashboard.
   if (!isAuthenticated) {
-    return <LoginPage onLoginSuccess={() => {
-      setIsAuthenticated(true);
-      setActiveRole(authService.getRole());
-      setActiveTab(authService.isAdmin() ? 'dashboard' : 'portal-dashboard');
-      forceRefresh();
-    }} />;
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
