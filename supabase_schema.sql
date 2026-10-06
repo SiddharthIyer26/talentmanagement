@@ -2,12 +2,17 @@
 -- IYER TALENT OS — ENTERPRISE SUPABASE CLOUD DATABASE SCHEMA
 -- Strict Zero-Trust Security, Authenticated Role-Based Access Control,
 -- Creator Isolation, Per-Influencer Annual Invoice Sequence, and Data Protection Triggers.
+-- Optimized for clean top-to-bottom execution on a fresh Supabase PostgreSQL project.
 -- ==============================================================================
 
+-- ==============================================================================
 -- 1. EXTENSIONS
+-- ==============================================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. AUTOMATED UPDATED_AT TIMESTAMP TRIGGER FUNCTION
+-- ==============================================================================
+-- 2. CORE UTILITY FUNCTIONS (Independent)
+-- ==============================================================================
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -16,7 +21,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 3. MANAGEMENT / ADMIN USERS TABLE
+-- ==============================================================================
+-- 3. BASE TABLES (Primary Entities without Foreign Keys)
+-- ==============================================================================
+
+-- 3.1 MANAGEMENT / ADMIN USERS TABLE
 -- Cloud authentication is managed exclusively by Supabase Auth (auth.users).
 CREATE TABLE IF NOT EXISTS public.management_users (
   id TEXT PRIMARY KEY,
@@ -31,7 +40,7 @@ CREATE TABLE IF NOT EXISTS public.management_users (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. INFLUENCERS TABLE
+-- 3.2 INFLUENCERS TABLE
 -- Cloud authentication is managed exclusively by Supabase Auth (auth.users).
 CREATE TABLE IF NOT EXISTS public.influencers (
   id TEXT PRIMARY KEY,
@@ -58,7 +67,7 @@ CREATE TABLE IF NOT EXISTS public.influencers (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. BRANDS CRM TABLE
+-- 3.3 BRANDS CRM TABLE
 CREATE TABLE IF NOT EXISTS public.brands (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -72,7 +81,71 @@ CREATE TABLE IF NOT EXISTS public.brands (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. BRANDS DIRECTORY VIEW (Masks sensitive internal notes and contact details for Creators)
+-- 3.4 EXPENSES TABLE (Agency & Operational Expenses)
+CREATE TABLE IF NOT EXISTS public.expenses (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('Software', 'Travel', 'Equipment', 'Agency Fee', 'Misc')),
+  amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ==============================================================================
+-- 4. SECURITY & AUTH HELPER FUNCTIONS (Depends on management_users & influencers)
+-- Must be created BEFORE any view, trigger, or RLS policy that references them.
+-- ==============================================================================
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  -- Safe bootstrap: if management_users table is empty, allow authenticated user to initialize/seed data
+  IF NOT EXISTS (SELECT 1 FROM public.management_users) THEN
+    RETURN (auth.role() = 'authenticated');
+  END IF;
+
+  RETURN (
+    coalesce(auth.jwt()->'app_metadata'->>'role', '') = 'ADMIN'
+    OR coalesce(auth.jwt()->'user_metadata'->>'role', '') = 'ADMIN'
+    OR coalesce(current_setting('request.jwt.claims', true)::jsonb->>'role', '') = 'ADMIN'
+    OR EXISTS (
+      SELECT 1 FROM public.management_users
+      WHERE email = coalesce(auth.jwt()->>'email', '') AND account_status = 'active'
+    )
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+CREATE OR REPLACE FUNCTION public.current_influencer_id()
+RETURNS TEXT AS $$
+DECLARE
+  inf_id TEXT;
+BEGIN
+  inf_id := coalesce(auth.jwt()->'user_metadata'->>'influencer_id', '');
+  IF inf_id <> '' THEN
+    RETURN inf_id;
+  END IF;
+
+  inf_id := coalesce(current_setting('request.jwt.claims', true)::jsonb->>'influencer_id', '');
+  IF inf_id <> '' THEN
+    RETURN inf_id;
+  END IF;
+
+  SELECT id INTO inf_id FROM public.influencers
+  WHERE email = coalesce(auth.jwt()->>'email', '') AND account_status = 'active'
+  LIMIT 1;
+
+  RETURN coalesce(inf_id, '');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+-- ==============================================================================
+-- 5. SECURE VIEWS (Depends on public.brands and public.is_admin())
+-- ==============================================================================
+
+-- Masks sensitive internal notes and contact details for Creators
 CREATE OR REPLACE VIEW public.brands_directory WITH (security_invoker = false) AS
 SELECT
   id,
@@ -87,10 +160,14 @@ SELECT
   updated_at
 FROM public.brands;
 
--- Grant read access to the masked brands_directory view for authenticated users
+-- Grant read access on the masked view to authenticated users
 GRANT SELECT ON public.brands_directory TO authenticated;
 
--- 7. COLLABORATIONS / CAMPAIGNS TABLE (Complete Talent OS Feature Support)
+-- ==============================================================================
+-- 6. RELATIONAL TABLES (Depends on influencers and brands)
+-- ==============================================================================
+
+-- 6.1 COLLABORATIONS / CAMPAIGNS TABLE
 CREATE TABLE IF NOT EXISTS public.campaigns (
   id TEXT PRIMARY KEY,
   influencer_id TEXT NOT NULL REFERENCES public.influencers(id) ON DELETE CASCADE,
@@ -141,7 +218,7 @@ CREATE TABLE IF NOT EXISTS public.campaigns (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. INVOICES TABLE (Strict unique invoice numbering per influencer and year)
+-- 6.2 INVOICES TABLE (Strict unique invoice numbering per influencer and year)
 CREATE TABLE IF NOT EXISTS public.invoices (
   id TEXT PRIMARY KEY,
   invoice_number TEXT NOT NULL UNIQUE,
@@ -173,19 +250,7 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 9. EXPENSES TABLE (Agency & Operational Expenses)
-CREATE TABLE IF NOT EXISTS public.expenses (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  category TEXT NOT NULL CHECK (category IN ('Software', 'Travel', 'Equipment', 'Agency Fee', 'Misc')),
-  amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  date DATE NOT NULL DEFAULT CURRENT_DATE,
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 10. NOTIFICATIONS TABLE (Payment reminders, deadlines, and approvals)
+-- 6.3 NOTIFICATIONS TABLE (Payment reminders, deadlines, and approvals)
 CREATE TABLE IF NOT EXISTS public.notifications (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL CHECK (type IN ('PAYMENT_DUE', 'APPROVAL_NEEDED', 'LIVE_DATE', 'FOLLOWUP_DUE')),
@@ -199,7 +264,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 11. INVOICE SEQUENCES TABLE
+-- 6.4 INVOICE SEQUENCES TABLE
 -- Tracks sequences independently per influencer and resets every calendar year.
 CREATE TABLE IF NOT EXISTS public.invoice_sequences (
   influencer_id TEXT NOT NULL REFERENCES public.influencers(id) ON DELETE CASCADE,
@@ -209,7 +274,11 @@ CREATE TABLE IF NOT EXISTS public.invoice_sequences (
   PRIMARY KEY (influencer_id, year)
 );
 
--- 12. ATOMIC PER-INFLUENCER ANNUAL INVOICE NUMBER GENERATOR
+-- ==============================================================================
+-- 7. BUSINESS LOGIC & DATA INTEGRITY FUNCTIONS (Depends on tables & is_admin)
+-- ==============================================================================
+
+-- 7.1 ATOMIC PER-INFLUENCER ANNUAL INVOICE NUMBER GENERATOR
 -- Formats strictly as: [first 2 letters of influencer]-[year]-[4 digit sequence]
 -- Example: JD-2026-0001, TC-2026-0001, JD-2027-0001
 CREATE OR REPLACE FUNCTION public.get_next_invoice_number(
@@ -246,56 +315,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 13. PERFORMANCE INDEXES
-CREATE INDEX IF NOT EXISTS idx_invoices_influencer_number ON public.invoices(influencer_id, invoice_number);
-CREATE INDEX IF NOT EXISTS idx_invoices_campaign ON public.invoices(campaign_id);
-CREATE INDEX IF NOT EXISTS idx_invoices_status ON public.invoices(payment_status);
-CREATE INDEX IF NOT EXISTS idx_campaigns_influencer ON public.campaigns(influencer_id);
-CREATE INDEX IF NOT EXISTS idx_campaigns_brand ON public.campaigns(brand_id);
-CREATE INDEX IF NOT EXISTS idx_campaigns_payment_status ON public.campaigns(payment_status);
-CREATE INDEX IF NOT EXISTS idx_campaigns_production_status ON public.campaigns(production_status);
-CREATE INDEX IF NOT EXISTS idx_campaigns_locked_date ON public.campaigns(deal_locked_date);
-CREATE INDEX IF NOT EXISTS idx_notifications_unread ON public.notifications(read, timestamp);
-
--- 14. AUTOMATED UPDATED_AT TRIGGERS
-DROP TRIGGER IF EXISTS trg_mgmt_users_updated_at ON public.management_users;
-CREATE TRIGGER trg_mgmt_users_updated_at
-  BEFORE UPDATE ON public.management_users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS trg_influencers_updated_at ON public.influencers;
-CREATE TRIGGER trg_influencers_updated_at
-  BEFORE UPDATE ON public.influencers
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS trg_brands_updated_at ON public.brands;
-CREATE TRIGGER trg_brands_updated_at
-  BEFORE UPDATE ON public.brands
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS trg_campaigns_updated_at ON public.campaigns;
-CREATE TRIGGER trg_campaigns_updated_at
-  BEFORE UPDATE ON public.campaigns
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS trg_invoices_updated_at ON public.invoices;
-CREATE TRIGGER trg_invoices_updated_at
-  BEFORE UPDATE ON public.invoices
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS trg_expenses_updated_at ON public.expenses;
-CREATE TRIGGER trg_expenses_updated_at
-  BEFORE UPDATE ON public.expenses
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-DROP TRIGGER IF EXISTS trg_notifications_updated_at ON public.notifications;
-CREATE TRIGGER trg_notifications_updated_at
-  BEFORE UPDATE ON public.notifications
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
--- 15. DATA INTEGRITY & SECURITY TRIGGERS
-
--- Trigger A: Restrict Influencer Profile Updates
+-- 7.2 DATA INTEGRITY FUNCTION: Restrict Influencer Profile Updates
 -- Creators can update creative/bio/media kit info, but CANNOT modify sensitive/admin fields.
 CREATE OR REPLACE FUNCTION public.protect_influencer_fields()
 RETURNS TRIGGER AS $$
@@ -315,12 +335,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS trg_protect_influencer_fields ON public.influencers;
-CREATE TRIGGER trg_protect_influencer_fields
-  BEFORE UPDATE ON public.influencers
-  FOR EACH ROW EXECUTE FUNCTION public.protect_influencer_fields();
-
--- Trigger B: Restrict Influencer Campaign Updates
+-- 7.3 DATA INTEGRITY FUNCTION: Restrict Influencer Campaign Updates
 -- Creators can ONLY update metrics, live links, and tracking links. They CANNOT alter commercials, terms, or statuses.
 CREATE OR REPLACE FUNCTION public.protect_campaign_fields()
 RETURNS TRIGGER AS $$
@@ -356,13 +371,74 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- ==============================================================================
+-- 8. PERFORMANCE INDEXES
+-- ==============================================================================
+CREATE INDEX IF NOT EXISTS idx_invoices_influencer_number ON public.invoices(influencer_id, invoice_number);
+CREATE INDEX IF NOT EXISTS idx_invoices_campaign ON public.invoices(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON public.invoices(payment_status);
+CREATE INDEX IF NOT EXISTS idx_campaigns_influencer ON public.campaigns(influencer_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_brand ON public.campaigns(brand_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_payment_status ON public.campaigns(payment_status);
+CREATE INDEX IF NOT EXISTS idx_campaigns_production_status ON public.campaigns(production_status);
+CREATE INDEX IF NOT EXISTS idx_campaigns_locked_date ON public.campaigns(deal_locked_date);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON public.notifications(read, timestamp);
+
+-- ==============================================================================
+-- 9. AUTOMATED TRIGGERS
+-- ==============================================================================
+
+-- 9.1 Automated updated_at triggers
+DROP TRIGGER IF EXISTS trg_mgmt_users_updated_at ON public.management_users;
+CREATE TRIGGER trg_mgmt_users_updated_at
+  BEFORE UPDATE ON public.management_users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trg_influencers_updated_at ON public.influencers;
+CREATE TRIGGER trg_influencers_updated_at
+  BEFORE UPDATE ON public.influencers
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trg_brands_updated_at ON public.brands;
+CREATE TRIGGER trg_brands_updated_at
+  BEFORE UPDATE ON public.brands
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trg_campaigns_updated_at ON public.campaigns;
+CREATE TRIGGER trg_campaigns_updated_at
+  BEFORE UPDATE ON public.campaigns
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trg_invoices_updated_at ON public.invoices;
+CREATE TRIGGER trg_invoices_updated_at
+  BEFORE UPDATE ON public.invoices
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trg_expenses_updated_at ON public.expenses;
+CREATE TRIGGER trg_expenses_updated_at
+  BEFORE UPDATE ON public.expenses
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trg_notifications_updated_at ON public.notifications;
+CREATE TRIGGER trg_notifications_updated_at
+  BEFORE UPDATE ON public.notifications
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- 9.2 Data Protection Triggers
+DROP TRIGGER IF EXISTS trg_protect_influencer_fields ON public.influencers;
+CREATE TRIGGER trg_protect_influencer_fields
+  BEFORE UPDATE ON public.influencers
+  FOR EACH ROW EXECUTE FUNCTION public.protect_influencer_fields();
+
 DROP TRIGGER IF EXISTS trg_protect_campaign_fields ON public.campaigns;
 CREATE TRIGGER trg_protect_campaign_fields
   BEFORE UPDATE ON public.campaigns
   FOR EACH ROW EXECUTE FUNCTION public.protect_campaign_fields();
 
--- 16. ROW LEVEL SECURITY (RLS) POLICIES
+-- ==============================================================================
+-- 10. ROW LEVEL SECURITY (RLS) POLICIES
 -- Zero Trust: Enable RLS on every table. Unauthenticated/anon users have NO ACCESS by default.
+-- ==============================================================================
 ALTER TABLE public.management_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.influencers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
@@ -372,61 +448,13 @@ ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoice_sequences ENABLE ROW LEVEL SECURITY;
 
--- Helper functions for RLS checks (Security Definer)
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
-BEGIN
-  -- Safe bootstrap: if management_users table is empty, allow authenticated user to initialize/seed data
-  IF NOT EXISTS (SELECT 1 FROM public.management_users) THEN
-    RETURN (auth.role() = 'authenticated');
-  END IF;
-
-  RETURN (
-    coalesce(auth.jwt()->'app_metadata'->>'role', '') = 'ADMIN'
-    OR coalesce(auth.jwt()->'user_metadata'->>'role', '') = 'ADMIN'
-    OR coalesce(current_setting('request.jwt.claims', true)::jsonb->>'role', '') = 'ADMIN'
-    OR EXISTS (
-      SELECT 1 FROM public.management_users
-      WHERE email = coalesce(auth.jwt()->>'email', '') AND account_status = 'active'
-    )
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
-
-CREATE OR REPLACE FUNCTION public.current_influencer_id()
-RETURNS TEXT AS $$
-DECLARE
-  inf_id TEXT;
-BEGIN
-  inf_id := coalesce(auth.jwt()->'user_metadata'->>'influencer_id', '');
-  IF inf_id <> '' THEN
-    RETURN inf_id;
-  END IF;
-
-  inf_id := coalesce(current_setting('request.jwt.claims', true)::jsonb->>'influencer_id', '');
-  IF inf_id <> '' THEN
-    RETURN inf_id;
-  END IF;
-
-  SELECT id INTO inf_id FROM public.influencers
-  WHERE email = coalesce(auth.jwt()->>'email', '') AND account_status = 'active'
-  LIMIT 1;
-
-  RETURN coalesce(inf_id, '');
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
-
--- ==============================================================================
--- STRICT AUTHENTICATED ACCESS POLICIES (Zero Access to 'anon' role)
--- ==============================================================================
-
--- 1. MANAGEMENT USERS: Only authenticated Admins can view and manage admin team accounts
+-- 10.1 MANAGEMENT USERS: Only authenticated Admins can view and manage admin team accounts
 CREATE POLICY admin_mgmt_users_all ON public.management_users
   FOR ALL TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
--- 2. INFLUENCERS:
+-- 10.2 INFLUENCERS:
 -- - Admins have full access
 -- - Influencers can view and update their own profile (trigger guards sensitive fields)
 CREATE POLICY admin_influencers_all ON public.influencers
@@ -443,14 +471,14 @@ CREATE POLICY influencer_update_own_profile ON public.influencers
   USING (id = public.current_influencer_id())
   WITH CHECK (id = public.current_influencer_id());
 
--- 3. BRANDS: Strictly Admin-only for all operations (SELECT, INSERT, UPDATE, DELETE).
+-- 10.3 BRANDS: Strictly Admin-only for all operations (SELECT, INSERT, UPDATE, DELETE).
 -- Influencers have NO direct table access to public.brands and must query the masked public.brands_directory view.
 CREATE POLICY admin_brands_all ON public.brands
   FOR ALL TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
--- 4. CAMPAIGNS / COLLABORATIONS:
+-- 10.4 CAMPAIGNS / COLLABORATIONS:
 -- - Admins have full access
 -- - Influencers can view only their own collaborations
 -- - Influencers can update only metrics & live links on their own collaborations (trigger guards commercials)
@@ -468,7 +496,7 @@ CREATE POLICY influencer_update_metrics ON public.campaigns
   USING (influencer_id = public.current_influencer_id())
   WITH CHECK (influencer_id = public.current_influencer_id());
 
--- 5. INVOICES:
+-- 10.5 INVOICES:
 -- - Admins have full access
 -- - Influencers can view only their own invoices
 CREATE POLICY admin_invoices_all ON public.invoices
@@ -480,13 +508,13 @@ CREATE POLICY influencer_view_own_invoices ON public.invoices
   FOR SELECT TO authenticated
   USING (influencer_id = public.current_influencer_id());
 
--- 6. EXPENSES: Only authenticated Admins can view and manage expenses
+-- 10.6 EXPENSES: Only authenticated Admins can view and manage expenses
 CREATE POLICY admin_expenses_all ON public.expenses
   FOR ALL TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
--- 7. NOTIFICATIONS:
+-- 10.7 NOTIFICATIONS:
 -- - Admins have full access
 -- - Influencers can view only notifications attached to their campaigns
 CREATE POLICY admin_notifications_all ON public.notifications
@@ -504,7 +532,7 @@ CREATE POLICY influencer_view_own_notifications ON public.notifications
     )
   );
 
--- 8. INVOICE SEQUENCES: Only authenticated Admins have direct table access; generator function is SECURITY DEFINER
+-- 10.8 INVOICE SEQUENCES: Only authenticated Admins have direct table access; generator function is SECURITY DEFINER
 CREATE POLICY admin_invoice_sequences_all ON public.invoice_sequences
   FOR ALL TO authenticated
   USING (public.is_admin())
