@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { db } from '../../services/db';
 import { authService } from '../../services/authService';
-import { Calendar as CalendarIcon, Clock, CheckCircle2, DollarSign, ArrowRight, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle2, IndianRupee, ArrowRight, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 
 interface CalendarViewProps {
   onSelectCampaign: (id: string) => void;

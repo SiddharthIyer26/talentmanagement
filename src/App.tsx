@@ -17,8 +17,10 @@ import { CalendarView } from './components/views/CalendarView';
 import { PaymentsView } from './components/views/PaymentsView';
 import { BrandsView } from './components/views/BrandsView';
 import { AnalyticsView } from './components/views/AnalyticsView';
+import { CollaborationsAnalyticsView } from './components/views/CollaborationsAnalyticsView';
 import { FinancialsView } from './components/views/FinancialsView';
 import { ReportsView } from './components/views/ReportsView';
+import { InvoicesManagementView } from './components/views/InvoicesManagementView';
 import { InvoiceGeneratorView } from './components/views/InvoiceGeneratorView';
 import { MediaKitGeneratorView } from './components/views/MediaKitGeneratorView';
 import { NotificationsView } from './components/views/NotificationsView';
@@ -43,13 +45,15 @@ export const App: React.FC = () => {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [invoiceCampaignId, setInvoiceCampaignId] = useState<string | undefined>(undefined);
+  const [invoiceInitialId, setInvoiceInitialId] = useState<string | undefined>(undefined);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   const forceRefresh = () => setRefreshKey(prev => prev + 1);
 
-  const handleNavigateToInvoice = (campaignId: string) => {
+  const handleNavigateToInvoice = (campaignId?: string, invoiceId?: string) => {
     setInvoiceCampaignId(campaignId);
-    setActiveTab('invoices');
+    setInvoiceInitialId(invoiceId);
+    setActiveTab('invoice-generator');
   };
 
   // Check Daily Welcome status when authenticating or loading session
@@ -189,11 +193,21 @@ export const App: React.FC = () => {
                 />
               )}
               {activeTab === 'brands' && <BrandsView />}
-              {activeTab === 'analytics' && <AnalyticsView />}
+              {(activeTab === 'analytics-revenue' || activeTab === 'analytics') && <AnalyticsView />}
+              {activeTab === 'collab-analytics' && <CollaborationsAnalyticsView />}
               {activeTab === 'financials' && <FinancialsView />}
               {activeTab === 'reports' && <ReportsView />}
               {activeTab === 'invoices' && (
-                <InvoiceGeneratorView initialCampaignId={invoiceCampaignId} />
+                <InvoicesManagementView
+                  onNavigateToGenerator={(invId, campId) => handleNavigateToInvoice(campId, invId)}
+                />
+              )}
+              {activeTab === 'invoice-generator' && (
+                <InvoiceGeneratorView
+                  initialCampaignId={invoiceCampaignId}
+                  initialInvoiceId={invoiceInitialId}
+                  onNavigateToInvoices={() => setActiveTab('invoices')}
+                />
               )}
               {activeTab === 'mediakits' && <MediaKitGeneratorView />}
               {activeTab === 'notifications' && (
@@ -209,7 +223,7 @@ export const App: React.FC = () => {
               {(activeTab === 'portal' || activeTab === 'portal-dashboard' || activeTab === 'my-insights') && (
                 <InfluencerPortalView onSelectCampaign={setSelectedCampaignId} />
               )}
-              {activeTab === 'portal-analytics' && <InfluencerAnalyticsView />}
+              {activeTab === 'portal-analytics' && <CollaborationsAnalyticsView />}
               {activeTab === 'my-collaborations' && (
                 <CollaborationsView
                   onSelectCampaign={setSelectedCampaignId}
@@ -235,7 +249,7 @@ export const App: React.FC = () => {
                       <span className="text-cyan-400 font-mono">₹</span> Official Commercial Rate Card
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Your saved commercial rate card as registered with agency manager.
+                      Your saved commercial rate card as registered with talent manager.
                     </p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center pt-2 font-mono">
                       <div className="p-3 bg-[#0b0f17] border border-tech-border rounded-xl">
@@ -283,7 +297,7 @@ export const App: React.FC = () => {
       <CampaignDetailModal
         campaignId={selectedCampaignId}
         onClose={() => setSelectedCampaignId(null)}
-        onNavigateToInvoice={handleNavigateToInvoice}
+        onNavigateToInvoice={(campId) => handleNavigateToInvoice(campId)}
         onRefresh={forceRefresh}
       />
     </div>

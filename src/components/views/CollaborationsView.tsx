@@ -18,45 +18,16 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
   const brands = db.getBrands();
 
   // Filter states
-  const [filterMonth, setFilterMonth] = useState<string>('August 2026');
+  const availableMonths = db.getAvailableMonths();
+  const [filterMonth, setFilterMonth] = useState<string>('ALL');
   const [filterInfluencer, setFilterInfluencer] = useState('ALL');
   const [filterBrand, setFilterBrand] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [filterPaymentStatus, setFilterPaymentStatus] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Helper to extract month label (e.g. "August 2026") from campaign date
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const getCampaignMonthLabel = (c: any): string => {
-    const dateStr = c.dealLockedDate || c.liveDate || c.campaignStartDate || '';
-    if (!dateStr) return 'August 2026';
-    const parts = dateStr.split('-');
-    if (parts.length >= 2) {
-      const year = parts[0];
-      const monthIdx = parseInt(parts[1], 10) - 1;
-      if (monthIdx >= 0 && monthIdx < 12) {
-        return `${monthNames[monthIdx]} ${year}`;
-      }
-    }
-    return 'August 2026';
-  };
-
-  // Dynamically extract all available months from campaigns
-  const availableMonthsSet = new Set<string>();
-  availableMonthsSet.add('August 2026');
-  availableMonthsSet.add('July 2026');
-  availableMonthsSet.add('June 2026');
-  availableMonthsSet.add('May 2026');
-  availableMonthsSet.add('April 2026');
-
-  campaigns.forEach(c => {
-    availableMonthsSet.add(getCampaignMonthLabel(c));
-  });
-
-  const availableMonths = Array.from(availableMonthsSet);
-
   const resetFilters = () => {
-    setFilterMonth('August 2026');
+    setFilterMonth('ALL');
     setFilterInfluencer('ALL');
     setFilterBrand('ALL');
     setFilterStatus('ALL');
@@ -72,7 +43,7 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
     
     // Month Filter
     if (filterMonth !== 'ALL') {
-      const cMonth = getCampaignMonthLabel(c);
+      const cMonth = db.getCampaignMonthLabel(c);
       if (cMonth.trim().toLowerCase() !== filterMonth.trim().toLowerCase()) return false;
     }
 

@@ -8,7 +8,7 @@ import {
   CreditCard,
   Building2,
   BarChart3,
-  DollarSign,
+  IndianRupee,
   FileSpreadsheet,
   FileText,
   Palette,
@@ -19,7 +19,8 @@ import {
   Clock,
   LogOut,
   X,
-  Sparkles
+  Sparkles,
+  PieChart
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -50,10 +51,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'calendar', label: 'Calendar Grid', icon: Calendar },
     { id: 'payments', label: 'Payments Tracker', icon: CreditCard },
     { id: 'brands', label: 'Brands CRM', icon: Building2 },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'financials', label: 'Revenue & Expenses', icon: DollarSign },
+    { id: 'analytics-revenue', label: 'Revenue Analytics', icon: BarChart3 },
+    { id: 'collab-analytics', label: 'Collab Analytics', icon: PieChart },
+    { id: 'financials', label: 'Revenue', icon: IndianRupee },
+    { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'reports', label: 'Reports & Export', icon: FileSpreadsheet },
-    { id: 'invoices', label: 'Invoice Generator', icon: FileText },
     { id: 'mediakits', label: 'Media Kit Generator', icon: Palette },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'activity', label: 'Activity Log', icon: History },
@@ -65,10 +67,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const influencerNavItems = [
     { id: 'portal-dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'my-collaborations', label: 'My Collaborations', icon: Briefcase },
-    { id: 'portal-analytics', label: 'My Analytics', icon: BarChart3 },
+    { id: 'portal-analytics', label: 'Collaborations Analytics', icon: BarChart3 },
     { id: 'portal-calendar', label: 'Calendar', icon: Calendar },
     { id: 'portal-payments', label: 'Payments', icon: CreditCard },
-    { id: 'my-rate-card', label: 'My Rate Card', icon: DollarSign },
+    { id: 'my-rate-card', label: 'My Rate Card', icon: IndianRupee },
   ];
 
   const navItems = isAdmin ? adminNavItems : influencerNavItems;
@@ -98,7 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2">
-          {isAdmin ? 'Agency Management' : 'Personal Workspace'}
+          {isAdmin ? 'Talent Operations' : 'Personal Workspace'}
         </div>
 
         <nav className="space-y-1">

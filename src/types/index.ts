@@ -110,6 +110,7 @@ export interface Influencer {
   followersCount?: number;
   monthlyInsightsSnapshots: InstagramInsightsSnapshot[];
   mediaKitFeaturedReels?: MediaKitFeaturedReel[];
+  invoicePrefix?: string; // e.g. "JD" for JD Tech
 }
 
 export interface Brand {
@@ -117,6 +118,7 @@ export interface Brand {
   name: string;
   logoUrl?: string;
   contactPerson: string;
+  brandManager?: string; // Brand manager / contact lead
   email: string;
   phone: string;
   notes?: string;
@@ -159,7 +161,13 @@ export interface Campaign {
   brandId: string;
   brandName: string;
   campaignName: string;
-  dealAmount: number;
+  dealAmount: number; // Commercial deal amount
+  lockedCommercial?: number; // Original commercial agreed/locked
+  receivedCommercial?: number; // Amount actually received from brand
+  tdsDeductedAmount?: number; // Actual TDS amount deducted
+  tdsDeductedPercentage?: number; // TDS percentage (e.g. 10%)
+  commissionEarned?: number; // Commission I earned from this collaboration
+  commissionPercentage?: number; // Commission percentage (e.g. 10%)
   dealLockedDate: string;
   liveDate?: string;
   paymentTermsDays: number; // e.g. 30, 45, 60
@@ -184,6 +192,8 @@ export interface Campaign {
   usageRights?: string;
   adRights?: string;
   internalNotes?: string;
+  startDate?: string; // Alias for campaignStartDate / dealLockedDate
+  brandManager?: string; // Sponsoring brand contact lead / manager
   productionStatus: ProductionStatus;
   paymentStatus: PaymentStatus;
   deliverables: Deliverable[];
@@ -214,18 +224,35 @@ export interface AppNotification {
   urgency?: PaymentUrgency;
 }
 
+export type InvoiceStatus = 'Draft' | 'Issued' | 'Paid' | 'Pending';
+
 export interface Invoice {
   id: string;
-  invoiceNumber: string;
+  invoiceNumber: string; // [Prefix]-[Year]-[0001] e.g. JD-2026-0001
   campaignId: string;
   influencerId: string;
+  influencerName?: string;
+  brandId?: string;
+  brandName?: string;
+  brandManager?: string;
+  clientName?: string;
+  clientAddress?: string;
+  campaignName?: string;
   invoiceDate: string;
-  invoiceTo: string; // Brand company name / billing info
-  paymentTo: string; // Influencer name / entity
-  serviceDescription: string;
-  quantity: number;
-  amount: number;
-  totalDue: number;
+  dueDate?: string;
+  invoiceTo?: string; // Brand company name / billing info
+  paymentTo?: string; // Influencer name / entity
+  serviceDescription?: string;
+  quantity?: number;
+  amount: number; // Commercial deal amount
+  tdsPercentage?: number;
+  tdsAmount?: number;
+  finalAmount?: number; // Payable after TDS
+  totalDue?: number;
+  paymentStatus: InvoiceStatus;
+  generatedDate?: string;
+  clientGstin?: string;
+  notes?: string;
 }
 
 export type MediaKitTheme = 

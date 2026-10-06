@@ -8,7 +8,7 @@ import {
   CheckSquare,
   Square,
   ExternalLink,
-  DollarSign,
+  IndianRupee,
   Clock,
   Sparkles,
   FileText,
@@ -19,7 +19,11 @@ import {
   MessageSquare,
   Save,
   Link as LinkIcon,
-  Lock
+  Lock,
+  Trash2,
+  AlertCircle,
+  Calculator,
+  Share2
 } from 'lucide-react';
 
 interface CampaignDetailModalProps {
@@ -46,6 +50,8 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
   const isInfluencer = authService.isInfluencer();
   const activeInfluencer = authService.getActiveInfluencer();
 
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
   // Security Check: Influencer can ONLY access & edit their OWN collaborations
   if (isInfluencer && activeInfluencer && campaign.influencerId !== activeInfluencer.id) {
     return (
@@ -68,6 +74,33 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
   const [brandName, setBrandName] = useState(campaign.brandName || '');
   const [campaignName, setCampaignName] = useState(campaign.campaignName || '');
   const [dealAmount, setDealAmount] = useState<number>(campaign.dealAmount || 0);
+
+  // Independent Talent Manager Financial Fields
+  const [lockedCommercial, setLockedCommercial] = useState<number>(
+    campaign.lockedCommercial || campaign.dealAmount || 0
+  );
+  const [receivedCommercial, setReceivedCommercial] = useState<number>(
+    campaign.receivedCommercial !== undefined
+      ? campaign.receivedCommercial
+      : (campaign.paymentStatus === 'Received' || campaign.paymentStatus === 'Paid' ? (campaign.lockedCommercial || campaign.dealAmount) : 0)
+  );
+  const [tdsDeductedPercentage, setTdsDeductedPercentage] = useState<number>(
+    campaign.tdsDeductedPercentage !== undefined ? campaign.tdsDeductedPercentage : 10
+  );
+  const [tdsDeductedAmount, setTdsDeductedAmount] = useState<number>(
+    campaign.tdsDeductedAmount !== undefined
+      ? campaign.tdsDeductedAmount
+      : Math.round(((campaign.lockedCommercial || campaign.dealAmount || 0) * 10) / 100)
+  );
+  const [commissionPercentage, setCommissionPercentage] = useState<number>(
+    campaign.commissionPercentage !== undefined ? campaign.commissionPercentage : 10
+  );
+  const [commissionEarned, setCommissionEarned] = useState<number>(
+    campaign.commissionEarned !== undefined
+      ? campaign.commissionEarned
+      : Math.round(((campaign.lockedCommercial || campaign.dealAmount || 0) * (campaign.commissionPercentage || 10)) / 100)
+  );
+
   const [productionStatus, setProductionStatus] = useState<ProductionStatus>(campaign.productionStatus || 'Locked');
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(campaign.paymentStatus || 'Pending');
 
@@ -195,7 +228,13 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
       id: campaign.id,
       brandName,
       campaignName,
-      dealAmount,
+      dealAmount: lockedCommercial,
+      lockedCommercial,
+      receivedCommercial,
+      tdsDeductedAmount,
+      tdsDeductedPercentage,
+      commissionEarned,
+      commissionPercentage,
       productionStatus,
       paymentStatus,
       paymentTermsText: finalTermsText,
@@ -206,7 +245,7 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
       paymentDueDate,
       calculatedDueDate: paymentDueDate || campaign.calculatedDueDate,
       paymentReceivedDate,
-      amountReceived,
+      amountReceived: receivedCommercial,
       amountPending,
       paymentNotes,
       trackingLink,
@@ -296,6 +335,15 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
                 >
                   <FileText className="w-3.5 h-3.5" />
                   <span>Generate Invoice</span>
+                </button>
+
+                <button
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  className="flex items-center space-x-1 px-3 py-2 bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 rounded-xl text-xs font-semibold"
+                  title="Delete Collaboration"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
                 </button>
               </>
             ) : (
@@ -676,12 +724,113 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
               </div>
             </div>
 
-            {/* Column 2: Payment Terms, Payment ETA, Post-Live Tracking, Performance */}
+            {/* Column 2: Commercials & Commission, Payment Terms, Payment ETA, Post-Live Tracking, Performance */}
             <div className="space-y-5">
+              {/* Financials & Commission Breakdown (Admin Independent Business Tracking) */}
+              {isAdmin && (
+                <div className="bg-[#0b0f17] border border-indigo-500/30 rounded-xl p-4 space-y-3">
+                  <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-indigo-400">
+                      <IndianRupee className="w-3.5 h-3.5 text-indigo-400" /> Commercials & Commission Breakdown
+                    </span>
+                    <span className="text-[10px] text-slate-400">Independent Business Tracking</span>
+                  </h3>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Locked Commercial (₹)</label>
+                      <input
+                        type="number"
+                        value={lockedCommercial}
+                        onChange={e => {
+                          const val = Number(e.target.value);
+                          setLockedCommercial(val);
+                          setDealAmount(val);
+                          setCommissionEarned(Math.round((val * commissionPercentage) / 100));
+                          setTdsDeductedAmount(Math.round((val * tdsDeductedPercentage) / 100));
+                        }}
+                        className="w-full bg-tech-card border border-tech-border text-slate-100 font-mono font-bold rounded p-2"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">Received Commercial (₹)</label>
+                      <input
+                        type="number"
+                        value={receivedCommercial}
+                        onChange={e => setReceivedCommercial(Number(e.target.value))}
+                        className="w-full bg-tech-card border border-tech-border text-emerald-400 font-mono font-bold rounded p-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-tech-border">
+                    <div>
+                      <label className="block text-slate-400 mb-1">TDS %</label>
+                      <input
+                        type="number"
+                        value={tdsDeductedPercentage}
+                        onChange={e => {
+                          const pct = Number(e.target.value);
+                          setTdsDeductedPercentage(pct);
+                          setTdsDeductedAmount(Math.round((lockedCommercial * pct) / 100));
+                        }}
+                        className="w-full bg-tech-card border border-tech-border text-amber-400 font-mono rounded p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">TDS Deducted Amount (₹)</label>
+                      <input
+                        type="number"
+                        value={tdsDeductedAmount}
+                        onChange={e => setTdsDeductedAmount(Number(e.target.value))}
+                        className="w-full bg-tech-card border border-tech-border text-amber-400 font-mono rounded p-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-tech-border">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Commission %</label>
+                      <input
+                        type="number"
+                        value={commissionPercentage}
+                        onChange={e => {
+                          const pct = Number(e.target.value);
+                          setCommissionPercentage(pct);
+                          setCommissionEarned(Math.round((lockedCommercial * pct) / 100));
+                        }}
+                        className="w-full bg-tech-card border border-tech-border text-indigo-400 font-mono font-bold rounded p-2"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-slate-400">Commission I Earned (₹)</label>
+                        <button
+                          type="button"
+                          onClick={() => setCommissionEarned(Math.round((lockedCommercial * commissionPercentage) / 100))}
+                          className="text-[10px] text-cyan-400 hover:underline flex items-center gap-0.5"
+                          title="Recalculate Locked × %"
+                        >
+                          <Calculator className="w-3 h-3" /> Auto
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        value={commissionEarned}
+                        onChange={e => setCommissionEarned(Number(e.target.value))}
+                        className="w-full bg-tech-card border border-indigo-500/50 text-indigo-400 font-mono font-bold rounded p-2"
+                        title="Calculated automatically or override manually"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Payment Terms & Payment ETA */}
               <div className="bg-[#0b0f17] border border-tech-border rounded-xl p-4 space-y-3">
                 <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Payment Terms & Payment ETA
+                  <IndianRupee className="w-3.5 h-3.5 text-emerald-400" /> Payment Terms & Payment ETA
                 </h3>
 
                 <div>
@@ -874,7 +1023,7 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
                   <span>Performance & Analytics</span>
                 </h3>
 
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-5 gap-2">
                   <div>
                     <label className="block text-[10px] text-slate-400">Views</label>
                     {isAdmin ? (
@@ -917,6 +1066,23 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
                     ) : (
                       <div className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono font-bold">
                         {(editMetrics.comments || 0).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-cyan-400 font-semibold flex items-center gap-0.5">
+                      <Share2 className="w-2.5 h-2.5" /> Shares
+                    </label>
+                    {isAdmin ? (
+                      <input
+                        type="number"
+                        value={editMetrics.shares || 0}
+                        onChange={e => setEditMetrics({ ...editMetrics, shares: Number(e.target.value) })}
+                        className="w-full bg-tech-card border border-cyan-500/30 rounded p-1.5 text-cyan-300 font-mono font-bold"
+                      />
+                    ) : (
+                      <div className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-cyan-300 font-mono font-bold">
+                        {((editMetrics.shares as number) || 0).toLocaleString()}
                       </div>
                     )}
                   </div>
@@ -1031,6 +1197,45 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Admin Delete Confirmation Dialog */}
+      {deleteConfirmOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0e131f] border border-rose-500/40 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-400">
+              <AlertCircle className="w-6 h-6 flex-shrink-0" />
+              <h3 className="text-base font-bold text-slate-100">Confirm Collaboration Deletion</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to delete <strong className="text-cyan-400 font-semibold">{campaign.campaignName}</strong>?
+            </p>
+            <p className="text-[11px] text-rose-400/80">
+              This action cannot be undone. All associated deliverables, tracking notes, and commission links will be permanently deleted.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  db.deleteCampaign(campaign.id);
+                  setDeleteConfirmOpen(false);
+                  onRefresh();
+                  onClose();
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-rose-600/20"
+              >
+                Delete Collaboration
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

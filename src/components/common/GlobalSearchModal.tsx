@@ -54,7 +54,10 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   );
 
   const invoices = db.getInvoices().filter(
-    inv => inv.invoiceNumber.toLowerCase().includes(q) || inv.serviceDescription.toLowerCase().includes(q)
+    inv =>
+      (inv.invoiceNumber && inv.invoiceNumber.toLowerCase().includes(q)) ||
+      (inv.serviceDescription && inv.serviceDescription.toLowerCase().includes(q)) ||
+      (inv.clientName && inv.clientName.toLowerCase().includes(q))
   );
 
   return (
@@ -190,7 +193,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                           <p className="text-[10px] text-slate-400 truncate max-w-md">{inv.serviceDescription}</p>
                         </div>
                         <span className="font-mono text-amber-400 font-bold">
-                          ₹{inv.totalDue.toLocaleString('en-IN')}
+                          ₹{(inv.finalAmount || inv.totalDue || inv.amount || 0).toLocaleString('en-IN')}
                         </span>
                       </div>
                     ))}

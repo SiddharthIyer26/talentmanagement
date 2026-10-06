@@ -9,7 +9,7 @@ import {
   Eye,
   Users,
   BarChart2,
-  DollarSign,
+  IndianRupee,
   CheckCircle2,
   ExternalLink,
   Plus,

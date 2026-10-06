@@ -1,7 +1,7 @@
 import React from 'react';
 import { authService } from '../../services/authService';
 import { db } from '../../services/db';
-import { Sparkles, ArrowRight, TrendingUp, Clock, AlertCircle, DollarSign, Video, ShieldCheck } from 'lucide-react';
+import { Sparkles, ArrowRight, TrendingUp, Clock, AlertCircle, IndianRupee, Video, ShieldCheck } from 'lucide-react';
 
 interface DailyWelcomeModalProps {
   onClose: () => void;
@@ -113,7 +113,7 @@ export const DailyWelcomeModal: React.FC<DailyWelcomeModalProps> = ({ onClose })
 
               <div className="bg-[#0b0f17] border border-emerald-500/30 rounded-2xl p-3.5 flex flex-col justify-between">
                 <span className="text-[10px] text-emerald-400 uppercase font-bold flex items-center gap-1">
-                  <DollarSign className="w-3 h-3" /> Pending
+                  <IndianRupee className="w-3 h-3" /> Pending
                 </span>
                 <span className="text-lg font-black text-emerald-400 mt-2">
                   ₹{(infPendingRevenue / 1000).toFixed(0)}k

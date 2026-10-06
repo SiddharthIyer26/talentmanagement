@@ -312,6 +312,12 @@ const SEED_DATA: DatabaseSchema = {
       brandName: 'GoBoult',
       campaignName: 'JD Tech × GoBoult Mustang Wireless ANC Earbuds Launch',
       dealAmount: 110000,
+      lockedCommercial: 110000,
+      receivedCommercial: 0,
+      tdsDeductedAmount: 11000,
+      tdsDeductedPercentage: 10,
+      commissionPercentage: 10,
+      commissionEarned: 11000,
       dealLockedDate: '2026-07-10',
       liveDate: '2026-07-25',
       paymentTermsDays: 30,
@@ -358,6 +364,12 @@ const SEED_DATA: DatabaseSchema = {
       brandName: 'Samsung India',
       campaignName: 'JD Tech × Samsung Galaxy Z Fold6 AI Workflow Showcase',
       dealAmount: 185000,
+      lockedCommercial: 185000,
+      receivedCommercial: 0,
+      tdsDeductedAmount: 18500,
+      tdsDeductedPercentage: 10,
+      commissionPercentage: 10,
+      commissionEarned: 18500,
       dealLockedDate: '2026-08-01',
       liveDate: '2026-08-15',
       paymentTermsDays: 45,
@@ -393,6 +405,12 @@ const SEED_DATA: DatabaseSchema = {
       brandName: 'Keychron Keyboards',
       campaignName: 'JD Tech × Keychron Q1 Max Custom Desk Build',
       dealAmount: 75000,
+      lockedCommercial: 75000,
+      receivedCommercial: 0,
+      tdsDeductedAmount: 7500,
+      tdsDeductedPercentage: 10,
+      commissionPercentage: 10,
+      commissionEarned: 7500,
       dealLockedDate: '2026-08-12',
       liveDate: '2026-08-27',
       paymentTermsDays: 30,
@@ -417,6 +435,12 @@ const SEED_DATA: DatabaseSchema = {
       brandName: 'ASUS ROG',
       campaignName: 'TechCraft Pro × ROG Ally X Handheld Gaming Review',
       dealAmount: 95000,
+      lockedCommercial: 95000,
+      receivedCommercial: 0,
+      tdsDeductedAmount: 9500,
+      tdsDeductedPercentage: 10,
+      commissionPercentage: 10,
+      commissionEarned: 9500,
       dealLockedDate: '2026-07-28',
       liveDate: '2026-08-10',
       paymentTermsDays: 15,
@@ -458,6 +482,12 @@ const SEED_DATA: DatabaseSchema = {
       brandName: 'GoBoult',
       campaignName: 'GadgetVision × GoBoult Smartwatch Fitness Reel',
       dealAmount: 80000,
+      lockedCommercial: 80000,
+      receivedCommercial: 80000,
+      tdsDeductedAmount: 8000,
+      tdsDeductedPercentage: 10,
+      commissionPercentage: 10,
+      commissionEarned: 8000,
       dealLockedDate: '2026-08-05',
       liveDate: '2026-08-18',
       paymentTermsDays: 30,
@@ -492,6 +522,12 @@ const SEED_DATA: DatabaseSchema = {
       brandName: 'OnePlus',
       campaignName: 'FutureByte × OnePlus Nord 4 Metal Unibody Teardown',
       dealAmount: 130000,
+      lockedCommercial: 130000,
+      receivedCommercial: 0,
+      tdsDeductedAmount: 13000,
+      tdsDeductedPercentage: 10,
+      commissionPercentage: 10,
+      commissionEarned: 13000,
       dealLockedDate: '2026-08-20',
       paymentTermsDays: 30,
       productionStatus: 'Under Production',
@@ -567,16 +603,26 @@ const SEED_DATA: DatabaseSchema = {
   invoices: [
     {
       id: 'inv-1041',
-      invoiceNumber: 'INV-2026-1041',
+      invoiceNumber: 'JD-2026-0001',
       campaignId: 'camp-101',
+      campaignName: 'JD Tech × GoBoult Mustang Wireless ANC Earbuds Launch',
       influencerId: 'inf-1',
+      influencerName: 'JD Tech',
+      brandName: 'GoBoult',
+      brandManager: 'Saurabh Malhotra',
       invoiceDate: '2026-07-26',
+      dueDate: '2026-08-24',
       invoiceTo: 'GoBoult India Pvt Ltd\nPlot 12, Sector 34, Gurugram, Haryana - 122001\nGSTIN: 07AABCG1234H1Z5',
       paymentTo: 'JD Tech Media Private Limited',
       serviceDescription: 'Influencer Marketing Services: 1x Instagram Collab Reel, 2x Story Slides & 30-Day Digital Ad Usage Rights for GoBoult Mustang Earbuds Launch.',
       quantity: 1,
       amount: 110000,
-      totalDue: 110000
+      tdsPercentage: 10,
+      tdsAmount: 11000,
+      finalAmount: 99000,
+      totalDue: 99000,
+      paymentStatus: 'Issued',
+      generatedDate: '2026-07-26T10:00:00.000Z'
     }
   ]
 };
@@ -618,7 +664,7 @@ class DatabaseService {
 
   // Calculate payment due dates & payment urgency levels automatically
   public recalculateAutomation() {
-    const todayStr = '2026-08-28'; // Fixed current date from system metadata
+    const todayStr = '2026-08-28'; // Current reference system date
     const today = new Date(todayStr);
 
     this.data.campaigns.forEach(campaign => {
@@ -632,16 +678,109 @@ class DatabaseService {
       if (campaign.paymentDueDate) {
         campaign.calculatedDueDate = campaign.paymentDueDate;
       }
-      // Auto calculate pending amount
-      const received = campaign.amountReceived || (campaign.paymentStatus === 'Received' || campaign.paymentStatus === 'Paid' ? campaign.dealAmount : 0);
-      campaign.amountPending = Math.max(0, campaign.dealAmount - received);
+
+      // Backfill & sync financial fields
+      campaign.lockedCommercial = campaign.lockedCommercial || campaign.dealAmount || 0;
+      campaign.commissionPercentage = campaign.commissionPercentage ?? 10;
+      if (campaign.commissionEarned === undefined) {
+        campaign.commissionEarned = Math.round(campaign.lockedCommercial * (campaign.commissionPercentage / 100));
+      }
+      campaign.tdsDeductedPercentage = campaign.tdsDeductedPercentage ?? 10;
+      if (campaign.tdsDeductedAmount === undefined) {
+        campaign.tdsDeductedAmount = Math.round(campaign.lockedCommercial * (campaign.tdsDeductedPercentage / 100));
+      }
+
+      // Automatic commission recognition & payment synchronization
+      if (campaign.paymentStatus === 'Received' || campaign.paymentStatus === 'Paid') {
+        campaign.receivedCommercial = campaign.receivedCommercial || campaign.amountReceived || campaign.lockedCommercial;
+        campaign.amountReceived = campaign.receivedCommercial;
+        campaign.amountPending = 0;
+        if (!campaign.paymentReceivedDate) {
+          campaign.paymentReceivedDate = campaign.dealLockedDate;
+        }
+      } else {
+        const received = campaign.amountReceived || campaign.receivedCommercial || 0;
+        campaign.amountPending = Math.max(0, campaign.lockedCommercial - received);
+      }
     });
 
     this.saveData();
   }
 
+  // --- Dynamic Month Extraction & Chronological Ordering ---
+  public getAvailableMonths(campaignsList?: Campaign[]): string[] {
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    const campaigns = campaignsList || this.data.campaigns;
+    const monthSet = new Set<string>();
+
+    campaigns.forEach(c => {
+      const dates = [c.dealLockedDate, c.liveDate, c.paymentReceivedDate, c.contentLiveDate, c.campaignStartDate];
+      dates.forEach(d => {
+        if (d && typeof d === 'string' && d.includes('-')) {
+          const parts = d.split('-');
+          if (parts.length >= 2) {
+            const year = parts[0];
+            const monthIdx = parseInt(parts[1], 10) - 1;
+            if (monthIdx >= 0 && monthIdx < 12) {
+              monthSet.add(`${monthNames[monthIdx]} ${year}`);
+            }
+          }
+        }
+      });
+    });
+
+    // Also include invoices if any
+    (this.data.invoices || []).forEach(inv => {
+      if (inv.invoiceDate && typeof inv.invoiceDate === 'string' && inv.invoiceDate.includes('-')) {
+        const parts = inv.invoiceDate.split('-');
+        if (parts.length >= 2) {
+          const year = parts[0];
+          const monthIdx = parseInt(parts[1], 10) - 1;
+          if (monthIdx >= 0 && monthIdx < 12) {
+            monthSet.add(`${monthNames[monthIdx]} ${year}`);
+          }
+        }
+      }
+    });
+
+    // Sort chronologically (earliest to latest)
+    return Array.from(monthSet).sort((a, b) => {
+      const partsA = a.trim().split(' ');
+      const partsB = b.trim().split(' ');
+      const yearA = parseInt(partsA[1] || '2026', 10);
+      const yearB = parseInt(partsB[1] || '2026', 10);
+      const monthA = monthNames.indexOf(partsA[0]);
+      const monthB = monthNames.indexOf(partsB[0]);
+
+      if (yearA !== yearB) return yearA - yearB;
+      return monthA - monthB;
+    });
+  }
+
+  public getCampaignMonthLabel(c: any): string {
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const dateStr = c.dealLockedDate || c.liveDate || c.campaignStartDate || c.paymentReceivedDate || '';
+    if (!dateStr || typeof dateStr !== 'string') return 'August 2026';
+    const parts = dateStr.split('-');
+    if (parts.length >= 2) {
+      const year = parts[0];
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      if (monthIdx >= 0 && monthIdx < 12) {
+        return `${monthNames[monthIdx]} ${year}`;
+      }
+    }
+    return 'August 2026';
+  }
+
   public getPaymentUrgency(campaign: Campaign): PaymentUrgency | null {
-    if (campaign.paymentStatus === 'Received' || !campaign.calculatedDueDate) {
+    if (campaign.paymentStatus === 'Received' || campaign.paymentStatus === 'Paid' || !campaign.calculatedDueDate) {
       return null;
     }
     const todayStr = '2026-08-28';
@@ -697,7 +836,186 @@ class DatabaseService {
     return this.data.invoices;
   }
 
+  public getInvoiceById(id: string): Invoice | undefined {
+    return this.data.invoices.find(inv => inv.id === id || inv.invoiceNumber === id);
+  }
+
+  // --- Invoice Number Generator (Unique per Influencer and Year) ---
+  public getInfluencerPrefix(influencerId: string): string {
+    const inf = this.getInfluencerById(influencerId);
+    if (inf?.invoicePrefix && inf.invoicePrefix.trim().length >= 2) {
+      return inf.invoicePrefix.trim().slice(0, 2).toUpperCase();
+    }
+    if (!inf || !inf.name) return 'IN';
+    const clean = inf.name.replace(/[^a-zA-Z\s]/g, '').trim();
+    const words = clean.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      return `${words[0][0]}${words[1][0]}`.toUpperCase();
+    }
+    return clean.slice(0, 2).toUpperCase() || 'IN';
+  }
+
+  public getNextInvoiceNumber(influencerId: string, dateOrYear?: string | number): string {
+    const prefix = this.getInfluencerPrefix(influencerId);
+    let year = 2026;
+    if (typeof dateOrYear === 'number') {
+      year = dateOrYear;
+    } else if (typeof dateOrYear === 'string' && dateOrYear.includes('-')) {
+      year = parseInt(dateOrYear.split('-')[0], 10) || 2026;
+    } else if (typeof dateOrYear === 'string' && dateOrYear.length === 4) {
+      year = parseInt(dateOrYear, 10) || 2026;
+    }
+
+    const prefixPattern = `${prefix}-${year}-`;
+    let maxSeq = 0;
+
+    (this.data.invoices || []).forEach(inv => {
+      if (inv.influencerId === influencerId && inv.invoiceNumber.startsWith(prefixPattern)) {
+        const seqPart = inv.invoiceNumber.replace(prefixPattern, '');
+        const num = parseInt(seqPart, 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    });
+
+    const nextSeq = String(maxSeq + 1).padStart(4, '0');
+    return `${prefix}-${year}-${nextSeq}`;
+  }
+
   // --- Entity Mutations ---
+
+  public saveInvoice(invoiceData: Partial<Invoice>): Invoice {
+    try {
+      const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
+      if (storedAuth) {
+        const session = JSON.parse(storedAuth);
+        if (session && session.isAuthenticated && session.role !== 'ADMIN') {
+          throw new Error('Unauthorized: Influencer accounts cannot modify invoices.');
+        }
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('Unauthorized')) throw e;
+    }
+
+    const infId = invoiceData.influencerId || '';
+    const dateStr = invoiceData.invoiceDate || new Date().toISOString().split('T')[0];
+    const inf = this.getInfluencerById(infId);
+    const camp = invoiceData.campaignId ? this.getCampaignById(invoiceData.campaignId) : undefined;
+
+    // Check if updating existing invoice
+    if (invoiceData.id) {
+      const idx = this.data.invoices.findIndex(inv => inv.id === invoiceData.id);
+      if (idx !== -1) {
+        const existing = this.data.invoices[idx];
+        const updated: Invoice = {
+          ...existing,
+          ...invoiceData,
+          // Never change invoiceNumber on update
+          invoiceNumber: existing.invoiceNumber
+        };
+        this.data.invoices[idx] = updated;
+        this.saveData();
+        return updated;
+      }
+    }
+
+    // Determine or generate unique invoice number
+    let finalInvNum = invoiceData.invoiceNumber;
+    if (!finalInvNum || finalInvNum.startsWith('INV-')) {
+      finalInvNum = this.getNextInvoiceNumber(infId, dateStr);
+    }
+
+    const amount = invoiceData.amount || camp?.dealAmount || 0;
+    const tdsPercentage = invoiceData.tdsPercentage ?? 10;
+    const tdsAmount = invoiceData.tdsAmount ?? Math.round(amount * (tdsPercentage / 100));
+    const finalAmount = invoiceData.finalAmount ?? Math.max(0, amount - tdsAmount);
+
+    const newInvoice: Invoice = {
+      id: invoiceData.id || 'inv-' + Date.now(),
+      invoiceNumber: finalInvNum,
+      campaignId: invoiceData.campaignId || '',
+      influencerId: infId,
+      influencerName: invoiceData.influencerName || inf?.name || 'Influencer',
+      brandName: invoiceData.brandName || camp?.brandName || 'Brand',
+      brandManager: invoiceData.brandManager || camp?.contactPerson || '',
+      campaignName: invoiceData.campaignName || camp?.campaignName || 'Campaign Deliverables',
+      invoiceDate: dateStr,
+      dueDate: invoiceData.dueDate || camp?.calculatedDueDate || dateStr,
+      invoiceTo: invoiceData.invoiceTo || camp?.brandName || 'Client',
+      paymentTo: invoiceData.paymentTo || inf?.bankDetails?.accountName || inf?.name || 'Influencer',
+      serviceDescription: invoiceData.serviceDescription || `${camp?.campaignName || 'Collaboration'} deliverables`,
+      quantity: invoiceData.quantity || 1,
+      amount,
+      tdsPercentage,
+      tdsAmount,
+      finalAmount,
+      totalDue: finalAmount,
+      paymentStatus: invoiceData.paymentStatus || 'Issued',
+      generatedDate: invoiceData.generatedDate || new Date().toISOString(),
+      clientGstin: invoiceData.clientGstin,
+      notes: invoiceData.notes
+    };
+
+    this.data.invoices.unshift(newInvoice);
+    this.saveData();
+    return newInvoice;
+  }
+
+  public deleteInvoice(invoiceId: string): boolean {
+    try {
+      const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
+      if (storedAuth) {
+        const session = JSON.parse(storedAuth);
+        if (session && session.isAuthenticated && session.role !== 'ADMIN') {
+          throw new Error('Unauthorized: Only Admin accounts can delete invoices.');
+        }
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('Unauthorized')) throw e;
+    }
+
+    this.data.invoices = this.data.invoices.filter(inv => inv.id !== invoiceId && inv.invoiceNumber !== invoiceId);
+    this.saveData();
+    return true;
+  }
+
+  public deleteCampaign(campaignId: string): boolean {
+    try {
+      const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
+      if (storedAuth) {
+        const session = JSON.parse(storedAuth);
+        if (session && session.isAuthenticated && session.role !== 'ADMIN') {
+          throw new Error('Unauthorized: Only Admin accounts can delete collaborations.');
+        }
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('Unauthorized')) throw e;
+    }
+
+    this.data.campaigns = this.data.campaigns.filter(c => c.id !== campaignId);
+    this.saveData();
+    return true;
+  }
+
+  public deleteBrand(brandId: string): { success: boolean; affectedCampaigns: number } {
+    try {
+      const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
+      if (storedAuth) {
+        const session = JSON.parse(storedAuth);
+        if (session && session.isAuthenticated && session.role !== 'ADMIN') {
+          throw new Error('Unauthorized: Only Admin accounts can delete brands.');
+        }
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('Unauthorized')) throw e;
+    }
+
+    const affected = this.data.campaigns.filter(c => c.brandId === brandId).length;
+    this.data.brands = this.data.brands.filter(b => b.id !== brandId);
+    this.saveData();
+    return { success: true, affectedCampaigns: affected };
+  }
 
   public saveCampaign(campaign: Partial<Campaign>): Campaign {
     try {
@@ -715,11 +1033,41 @@ class DatabaseService {
       }
     }
 
+    const lockedCommercial = campaign.lockedCommercial || campaign.dealAmount || 0;
+    const commissionPercentage = campaign.commissionPercentage ?? 10;
+    const commissionEarned = campaign.commissionEarned !== undefined 
+      ? campaign.commissionEarned 
+      : Math.round(lockedCommercial * (commissionPercentage / 100));
+
+    const tdsDeductedPercentage = campaign.tdsDeductedPercentage ?? 10;
+    const tdsDeductedAmount = campaign.tdsDeductedAmount !== undefined
+      ? campaign.tdsDeductedAmount
+      : Math.round(lockedCommercial * (tdsDeductedPercentage / 100));
+
     if (campaign.id) {
       const idx = this.data.campaigns.findIndex(c => c.id === campaign.id);
       if (idx !== -1) {
         const existing = this.data.campaigns[idx];
-        const updated = { ...existing, ...campaign } as Campaign;
+        const updated = {
+          ...existing,
+          ...campaign,
+          lockedCommercial,
+          dealAmount: lockedCommercial,
+          commissionPercentage,
+          commissionEarned,
+          tdsDeductedPercentage,
+          tdsDeductedAmount
+        } as Campaign;
+
+        // Automatic commission recognition when marked Received / Paid
+        if (campaign.paymentStatus === 'Received' || campaign.paymentStatus === 'Paid') {
+          updated.receivedCommercial = campaign.receivedCommercial || campaign.amountReceived || lockedCommercial;
+          updated.amountReceived = updated.receivedCommercial;
+          updated.amountPending = 0;
+          if (!updated.paymentReceivedDate) {
+            updated.paymentReceivedDate = new Date().toISOString().split('T')[0];
+          }
+        }
         
         // Add activity log if status changed
         if (campaign.productionStatus && campaign.productionStatus !== existing.productionStatus) {
@@ -736,7 +1084,7 @@ class DatabaseService {
             id: 'act-' + Date.now(),
             timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
             actor: 'Manager',
-            action: `Payment status changed to ${campaign.paymentStatus}`
+            action: `Payment status changed to ${campaign.paymentStatus} (Commission ₹${commissionEarned.toLocaleString('en-IN')} recognized)`
           });
         }
 
@@ -754,7 +1102,13 @@ class DatabaseService {
       brandId: campaign.brandId || '',
       brandName: campaign.brandName || 'Brand',
       campaignName: campaign.campaignName || 'New Campaign',
-      dealAmount: campaign.dealAmount || 0,
+      dealAmount: lockedCommercial,
+      lockedCommercial,
+      receivedCommercial: campaign.receivedCommercial || 0,
+      tdsDeductedAmount,
+      tdsDeductedPercentage,
+      commissionPercentage,
+      commissionEarned,
       dealLockedDate: campaign.dealLockedDate || new Date().toISOString().split('T')[0],
       liveDate: campaign.liveDate,
       paymentTermsDays: campaign.paymentTermsDays || 30,
@@ -789,6 +1143,11 @@ class DatabaseService {
       brandName: original.brandName,
       campaignName: `${original.campaignName} (Copy)`,
       dealAmount: original.dealAmount,
+      lockedCommercial: original.lockedCommercial || original.dealAmount,
+      commissionPercentage: original.commissionPercentage,
+      commissionEarned: original.commissionEarned,
+      tdsDeductedPercentage: original.tdsDeductedPercentage,
+      tdsDeductedAmount: original.tdsDeductedAmount,
       dealLockedDate: new Date().toISOString().split('T')[0],
       paymentTermsDays: original.paymentTermsDays,
       productionStatus: 'Locked',
@@ -834,6 +1193,18 @@ class DatabaseService {
   }
 
   public deleteInfluencer(influencerId: string) {
+    try {
+      const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
+      if (storedAuth) {
+        const session = JSON.parse(storedAuth);
+        if (session && session.isAuthenticated && session.role !== 'ADMIN') {
+          throw new Error('Unauthorized: Only Admin accounts can delete influencers.');
+        }
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('Unauthorized')) throw e;
+    }
+
     this.data.influencers = this.data.influencers.filter(i => i.id !== influencerId);
     this.saveData();
   }
@@ -919,7 +1290,6 @@ class DatabaseService {
     }
   }
 
-
   public saveBrand(brand: Brand) {
     const idx = this.data.brands.findIndex(b => b.id === brand.id);
     if (idx !== -1) {
@@ -948,21 +1318,34 @@ class DatabaseService {
     if (!campaign) throw new Error('Campaign not found');
     const influencer = this.getInfluencerById(campaign.influencerId);
 
-    const seq = this.data.invoiceSeqCounter++;
-    const invNum = `INV-2026-${seq}`;
+    const invNum = this.getNextInvoiceNumber(campaign.influencerId, invoiceDate);
+    const amount = campaign.lockedCommercial || campaign.dealAmount;
+    const tdsPercentage = campaign.tdsDeductedPercentage ?? 10;
+    const tdsAmount = Math.round(amount * (tdsPercentage / 100));
+    const finalAmount = Math.max(0, amount - tdsAmount);
 
     const newInvoice: Invoice = {
-      id: 'inv-' + seq,
+      id: 'inv-' + Date.now(),
       invoiceNumber: invNum,
       campaignId: campaign.id,
       influencerId: campaign.influencerId,
+      influencerName: influencer?.name || 'Influencer',
+      brandName: campaign.brandName,
+      brandManager: campaign.contactPerson || '',
+      campaignName: campaign.campaignName,
       invoiceDate: invoiceDate || new Date().toISOString().split('T')[0],
+      dueDate: campaign.calculatedDueDate || campaign.paymentDueDate,
       invoiceTo: invoiceTo || campaign.brandName,
       paymentTo: influencer?.bankDetails.accountName || influencer?.name || 'Talent Management',
       serviceDescription: serviceDescription || `${campaign.campaignName} deliverables`,
       quantity: 1,
-      amount: campaign.dealAmount,
-      totalDue: campaign.dealAmount
+      amount,
+      tdsPercentage,
+      tdsAmount,
+      finalAmount,
+      totalDue: finalAmount,
+      paymentStatus: 'Issued',
+      generatedDate: new Date().toISOString()
     };
 
     this.data.invoices.unshift(newInvoice);
@@ -970,38 +1353,73 @@ class DatabaseService {
     return newInvoice;
   }
 
-  // --- Financial Summary Helpers ---
-
+  // --- Financial Summary Helpers (Independent Business Model) ---
   public getFinancialMetrics(influencerIdFilter?: string) {
     let campaigns = this.data.campaigns;
-    let expenses = this.data.expenses;
 
-    if (influencerIdFilter) {
+    if (influencerIdFilter && influencerIdFilter !== 'all') {
       campaigns = campaigns.filter(c => c.influencerId === influencerIdFilter);
     }
 
-    const totalRevenue = campaigns.reduce((acc, c) => acc + c.dealAmount, 0);
-    const paymentsReceived = campaigns
-      .filter(c => c.paymentStatus === 'Received')
-      .reduce((acc, c) => acc + c.dealAmount, 0);
-    const pendingPayments = campaigns
-      .filter(c => c.paymentStatus === 'Pending')
-      .reduce((acc, c) => acc + c.dealAmount, 0);
+    // 1. Total Influencer Revenue: Total commercial / deal value generated by influencers
+    const totalInfluencerRevenue = campaigns.reduce((acc, c) => acc + (c.lockedCommercial || c.dealAmount || 0), 0);
+
+    // 2. Total Received: Amount actually received from brands
+    const totalReceived = campaigns.reduce((acc, c) => {
+      if (c.paymentStatus === 'Received' || c.paymentStatus === 'Paid') {
+        return acc + (c.receivedCommercial || c.amountReceived || c.lockedCommercial || c.dealAmount || 0);
+      }
+      return acc + (c.receivedCommercial || c.amountReceived || 0);
+    }, 0);
+
+    // 3. Total Receivables: Amount still expected from brands
+    const totalReceivables = campaigns.reduce((acc, c) => {
+      if (c.paymentStatus === 'Received' || c.paymentStatus === 'Paid') {
+        return acc;
+      }
+      const rec = c.receivedCommercial || c.amountReceived || 0;
+      const total = c.lockedCommercial || c.dealAmount || 0;
+      return acc + Math.max(0, total - rec);
+    }, 0);
+
+    // 4. My Commission Revenue: Total commission I have earned from collaborations
+    const myCommissionRevenue = campaigns.reduce((acc, c) => {
+      return acc + (c.commissionEarned || 0);
+    }, 0);
+
+    // Commission from Received Deals
+    const myReceivedCommission = campaigns.reduce((acc, c) => {
+      if (c.paymentStatus === 'Received' || c.paymentStatus === 'Paid') {
+        return acc + (c.commissionEarned || 0);
+      }
+      return acc;
+    }, 0);
+
+    // 5. Total TDS Deducted
+    const tdsDeducted = campaigns.reduce((acc, c) => acc + (c.tdsDeductedAmount || 0), 0);
+
+    // 6. Influencer Payouts: Total commercial value payable/paid to creators
+    const influencerPayouts = Math.max(0, totalReceived - myReceivedCommission - tdsDeducted);
 
     const overduePayments = campaigns
       .filter(c => c.paymentStatus === 'Pending' && this.getPaymentUrgency(c) === 'Overdue')
-      .reduce((acc, c) => acc + c.dealAmount, 0);
-
-    const totalExpenses = influencerIdFilter ? 0 : expenses.reduce((acc, e) => acc + e.amount, 0);
-    const netEarnings = totalRevenue - totalExpenses;
+      .reduce((acc, c) => acc + (c.lockedCommercial || c.dealAmount || 0), 0);
 
     return {
-      totalRevenue,
-      paymentsReceived,
-      pendingPayments,
+      totalInfluencerRevenue,
+      myCommissionRevenue,
+      myReceivedCommission,
+      totalReceivables,
+      totalReceived,
+      tdsDeducted,
+      influencerPayouts,
+      // Backward compatibility aliases
+      totalRevenue: totalInfluencerRevenue,
+      paymentsReceived: totalReceived,
+      pendingPayments: totalReceivables,
       overduePayments,
-      totalExpenses,
-      netEarnings
+      totalExpenses: 0,
+      netEarnings: myCommissionRevenue
     };
   }
 

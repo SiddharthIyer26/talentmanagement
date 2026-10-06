@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { db } from '../../services/db';
 import { authService } from '../../services/authService';
 import { ProductionStatus } from '../../types';
-import { Plus, X, Sparkles, Calendar, DollarSign, Briefcase } from 'lucide-react';
+import { Plus, X, Sparkles, Calendar, IndianRupee, Briefcase, Percent } from 'lucide-react';
 
 interface QuickAddCampaignModalProps {
   isOpen: boolean;
@@ -23,7 +23,14 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
   const [brandId, setBrandId] = useState(brands[0]?.id || '');
   const [newBrandName, setNewBrandName] = useState('');
   const [campaignName, setCampaignName] = useState('');
-  const [dealAmount, setDealAmount] = useState<number>(100000);
+  
+  // Financial fields
+  const [lockedCommercial, setLockedCommercial] = useState<number>(100000);
+  const [commissionPercentage, setCommissionPercentage] = useState<number>(10);
+  const [commissionEarned, setCommissionEarned] = useState<number>(10000);
+  const [tdsPercentage, setTdsPercentage] = useState<number>(10);
+  const [tdsDeductedAmount, setTdsDeductedAmount] = useState<number>(10000);
+
   const [dealLockedDate, setDealLockedDate] = useState(new Date().toISOString().split('T')[0]);
   const [liveDate, setLiveDate] = useState('');
   const [paymentTermsDays, setPaymentTermsDays] = useState<number>(30);
@@ -31,6 +38,23 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
   const [deliverablesText, setDeliverablesText] = useState('1x Collab Reel\n2x Instagram Stories');
 
   if (!isOpen) return null;
+
+  // Auto calculate commission and TDS when commercial changes
+  const handleCommercialChange = (val: number) => {
+    setLockedCommercial(val);
+    setCommissionEarned(Math.round((val * commissionPercentage) / 100));
+    setTdsDeductedAmount(Math.round((val * tdsPercentage) / 100));
+  };
+
+  const handleCommissionPctChange = (pct: number) => {
+    setCommissionPercentage(pct);
+    setCommissionEarned(Math.round((lockedCommercial * pct) / 100));
+  };
+
+  const handleTdsPctChange = (pct: number) => {
+    setTdsPercentage(pct);
+    setTdsDeductedAmount(Math.round((lockedCommercial * pct) / 100));
+  };
 
   // Auto calculate due date preview
   let calculatedDueDatePreview = 'Enter Live Date';
@@ -64,7 +88,13 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
       brandId: brandId === 'NEW' ? 'brand-' + Date.now() : brandId,
       brandName: finalBrandName,
       campaignName: generatedTitle,
-      dealAmount: Number(dealAmount),
+      dealAmount: Number(lockedCommercial),
+      lockedCommercial: Number(lockedCommercial),
+      receivedCommercial: 0,
+      tdsDeductedAmount: Number(tdsDeductedAmount),
+      tdsDeductedPercentage: Number(tdsPercentage),
+      commissionEarned: Number(commissionEarned),
+      commissionPercentage: Number(commissionPercentage),
       dealLockedDate,
       liveDate: liveDate || undefined,
       paymentTermsDays: Number(paymentTermsDays),
@@ -147,34 +177,84 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
             />
           </div>
 
-          {/* Deal Amount & Payment Terms */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">Commercial Deal Amount (₹) *</label>
-              <div className="relative">
-                <DollarSign className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" />
-                <input
-                  type="number"
-                  value={dealAmount}
-                  onChange={e => setDealAmount(Number(e.target.value))}
-                  className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded-lg pl-8 p-2.5 focus:border-cyan-400 focus:outline-none font-mono"
-                  required
-                />
+          {/* Commercial & Financials */}
+          <div className="bg-[#080b12] border border-tech-border rounded-xl p-3.5 space-y-3">
+            <h4 className="font-bold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+              <IndianRupee className="w-3.5 h-3.5 text-cyan-400" /> Commercials & Commission Terms
+            </h4>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Locked Commercial (₹) *</label>
+                <div className="relative">
+                  <IndianRupee className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" />
+                  <input
+                    type="number"
+                    value={lockedCommercial}
+                    onChange={e => handleCommercialChange(Number(e.target.value))}
+                    className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded-lg pl-8 p-2.5 focus:border-cyan-400 focus:outline-none font-mono font-bold"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Payment Terms *</label>
+                <select
+                  value={paymentTermsDays}
+                  onChange={e => setPaymentTermsDays(Number(e.target.value))}
+                  className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded-lg p-2.5 focus:border-cyan-400 focus:outline-none font-mono"
+                >
+                  <option value={15}>15 Days Post Live</option>
+                  <option value={30}>30 Days Post Live (Standard)</option>
+                  <option value={45}>45 Days Post Live (Corporate)</option>
+                  <option value={60}>60 Days Post Live</option>
+                </select>
               </div>
             </div>
 
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">Payment Terms *</label>
-              <select
-                value={paymentTermsDays}
-                onChange={e => setPaymentTermsDays(Number(e.target.value))}
-                className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded-lg p-2.5 focus:border-cyan-400 focus:outline-none font-mono"
-              >
-                <option value={15}>15 Days Post Live</option>
-                <option value={30}>30 Days Post Live (Standard)</option>
-                <option value={45}>45 Days Post Live (Corporate)</option>
-                <option value={60}>60 Days Post Live</option>
-              </select>
+            {/* Commission & TDS */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+              <div>
+                <label className="block text-slate-400 text-[10px] mb-1">Commission %</label>
+                <input
+                  type="number"
+                  value={commissionPercentage}
+                  onChange={e => handleCommissionPctChange(Number(e.target.value))}
+                  className="w-full bg-[#0b0f17] border border-tech-border text-indigo-400 rounded p-2 font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 text-[10px] mb-1">My Commission (₹)</label>
+                <input
+                  type="number"
+                  value={commissionEarned}
+                  onChange={e => setCommissionEarned(Number(e.target.value))}
+                  className="w-full bg-[#0b0f17] border border-indigo-500/50 text-indigo-400 rounded p-2 font-mono font-bold"
+                  title="Calculated automatically or override manually"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 text-[10px] mb-1">TDS %</label>
+                <input
+                  type="number"
+                  value={tdsPercentage}
+                  onChange={e => handleTdsPctChange(Number(e.target.value))}
+                  className="w-full bg-[#0b0f17] border border-tech-border text-amber-400 rounded p-2 font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 text-[10px] mb-1">TDS Amount (₹)</label>
+                <input
+                  type="number"
+                  value={tdsDeductedAmount}
+                  onChange={e => setTdsDeductedAmount(Number(e.target.value))}
+                  className="w-full bg-[#0b0f17] border border-tech-border text-amber-400 rounded p-2 font-mono font-bold"
+                />
+              </div>
             </div>
           </div>
 
@@ -201,7 +281,7 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-cyan-400 font-semibold mb-1">Auto Calculated Due Date</label>
+              <label className="block text-cyan-400 font-semibold mb-1">Auto Due Date</label>
               <div className="w-full bg-[#0b0f17] border border-cyan-500/30 text-cyan-400 rounded-lg p-2 font-mono font-bold text-center">
                 {calculatedDueDatePreview}
               </div>

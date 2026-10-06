@@ -1,71 +1,137 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../../services/db';
 import { pdfService } from '../../services/pdfService';
-import { FileText, Download, Sparkles } from 'lucide-react';
+import { FileText, Download, Sparkles, Check, ArrowLeft, Save } from 'lucide-react';
+import { Invoice } from '../../types';
 
 interface InvoiceGeneratorViewProps {
   initialCampaignId?: string;
+  initialInvoiceId?: string;
+  onNavigateToInvoices?: () => void;
 }
 
-export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({ initialCampaignId }) => {
+export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
+  initialCampaignId,
+  initialInvoiceId,
+  onNavigateToInvoices
+}) => {
   const influencers = db.getInfluencers();
   const campaigns = db.getCampaigns();
 
+  // If loading existing invoice
+  const existingInvoice = initialInvoiceId ? db.getInvoiceById(initialInvoiceId) : undefined;
+
   const defaultCampaign = initialCampaignId
     ? db.getCampaignById(initialCampaignId)
+    : existingInvoice?.campaignId
+    ? db.getCampaignById(existingInvoice.campaignId)
     : campaigns[0];
 
   const [selectedInfluencerId, setSelectedInfluencerId] = useState(
-    defaultCampaign?.influencerId || influencers[0]?.id || ''
+    existingInvoice?.influencerId || defaultCampaign?.influencerId || influencers[0]?.id || ''
   );
 
   const [selectedCampaignId, setSelectedCampaignId] = useState(
-    defaultCampaign?.id || ''
+    existingInvoice?.campaignId || defaultCampaign?.id || ''
   );
 
   const selectedInfluencer = db.getInfluencerById(selectedInfluencerId) || influencers[0];
   const selectedCampaign = db.getCampaignById(selectedCampaignId) || defaultCampaign;
 
-  // Editable fields matching user reference design layout
-  const [invoiceNumber, setInvoiceNumber] = useState('0048');
-  const [invoiceDateText, setInvoiceDateText] = useState('21st August 2026');
+  // Invoice Number: if existing invoice use its number, else generate sequential format [Prefix]-[Year]-[0001]
+  const [invoiceNumber, setInvoiceNumber] = useState(() => {
+    if (existingInvoice) return existingInvoice.invoiceNumber;
+    return db.getNextInvoiceNumber(selectedInfluencerId);
+  });
+
+  const [invoiceDateText, setInvoiceDateText] = useState(
+    existingInvoice?.invoiceDate || '21st August 2026'
+  );
+  const [dueDateText, setDueDateText] = useState(
+    existingInvoice?.dueDate || '20th September 2026'
+  );
 
   // Influencer / Creator Details
   const [influencerName, setInfluencerName] = useState(
-    selectedInfluencer?.bankDetails.accountName || selectedInfluencer?.name || 'Jnanadeepu J S'
+    existingInvoice?.influencerName || selectedInfluencer?.bankDetails.accountName || selectedInfluencer?.name || 'Jnanadeepu J S'
   );
   const [influencerAddress, setInfluencerAddress] = useState(
     selectedInfluencer?.address || 'Kyatsandra CM Extension\n1st Main Road 6th Cross\nTumkur Karnataka 572104'
   );
 
   // Client / Invoice To Details
-  const [clientName, setClientName] = useState('TORCHLIGHT BRAND CONSULTING LLP');
-  const [clientAddress, setClientAddress] = useState('A-175, First Floor, Shivalik,\nMalviya Nagar, New Delhi 110017');
-  const [clientGstin, setClientGstin] = useState('07AAXFT2697PIZU');
+  const [clientName, setClientName] = useState(
+    existingInvoice?.clientName || 'TORCHLIGHT BRAND CONSULTING LLP'
+  );
+  const [clientAddress, setClientAddress] = useState(
+    existingInvoice?.clientAddress || 'A-175, First Floor, Shivalik,\nMalviya Nagar, New Delhi 110017'
+  );
+  const [clientGstin, setClientGstin] = useState(
+    existingInvoice?.clientGstin || '07AAXFT2697PIZU'
+  );
 
   // Line Item Details
   const [serviceDescription, setServiceDescription] = useState(
-    selectedCampaign?.campaignName || 'JD x Realme - Pai : 1 Store Visit Reel'
+    existingInvoice?.serviceDescription || selectedCampaign?.campaignName || 'JD x Realme - Pai : 1 Store Visit Reel'
   );
-  const [amount, setAmount] = useState<number>(selectedCampaign?.dealAmount || 35000);
+  const [amount, setAmount] = useState<number>(
+    existingInvoice?.amount || selectedCampaign?.dealAmount || 35000
+  );
   const [quantity, setQuantity] = useState<number>(1);
 
+  // TDS configuration
+  const [tdsPercentage, setTdsPercentage] = useState<number>(existingInvoice?.tdsPercentage || 10);
+  const [tdsAmount, setTdsAmount] = useState<number>(() => {
+    if (existingInvoice?.tdsAmount !== undefined) return existingInvoice.tdsAmount;
+    return Math.round(((selectedCampaign?.dealAmount || 35000) * 10) / 100);
+  });
+  const [paymentStatus, setPaymentStatus] = useState<'Draft' | 'Issued' | 'Paid' | 'Pending'>(
+    existingInvoice?.paymentStatus || 'Issued'
+  );
+
   // Bank & Contact Details
-  const [bankAccountName, setBankAccountName] = useState(selectedInfluencer?.bankDetails.accountName || 'Jnanadeepu J S');
-  const [bankName, setBankName] = useState(selectedInfluencer?.bankDetails.bankName || 'Canara Bank');
-  const [accountNumber, setAccountNumber] = useState(selectedInfluencer?.bankDetails.accountNumber || '110040997151');
+  const [bankAccountName, setBankAccountName] = useState(
+    selectedInfluencer?.bankDetails.accountName || 'Jnanadeepu J S'
+  );
+  const [bankName, setBankName] = useState(
+    selectedInfluencer?.bankDetails.bankName || 'Canara Bank'
+  );
+  const [accountNumber, setAccountNumber] = useState(
+    selectedInfluencer?.bankDetails.accountNumber || '110040997151'
+  );
   const [ifsc, setIfsc] = useState(selectedInfluencer?.bankDetails.ifsc || 'CNRB0005558');
-  const [pan, setPan] = useState(selectedInfluencer?.bankDetails.pan || selectedInfluencer?.pan || 'CDQPJ0428Q');
+  const [pan, setPan] = useState(
+    selectedInfluencer?.bankDetails.pan || selectedInfluencer?.pan || 'CDQPJ0428Q'
+  );
   const [contactPhone, setContactPhone] = useState(selectedInfluencer?.phone || '7899733779');
-  const [contactEmail, setContactEmail] = useState(selectedInfluencer?.email || 'Jdtechhcontact@gmail.com');
+  const [contactEmail, setContactEmail] = useState(
+    selectedInfluencer?.email || 'Jdtechhcontact@gmail.com'
+  );
+
   // GST & Disclaimer configuration
-  const [isGstRegistered, setIsGstRegistered] = useState(false);
   const [gstDisclaimerText, setGstDisclaimerText] = useState(
     'We Are Not GST Registered . No GST Is Charged On This Invoice'
   );
 
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Auto calculate TDS amount when amount or tdsPercentage changes
+  const handleTdsPercentageChange = (pct: number) => {
+    setTdsPercentage(pct);
+    setTdsAmount(Math.round(((amount * quantity) * pct) / 100));
+  };
+
+  const handleAmountChange = (newAmt: number) => {
+    setAmount(newAmt);
+    setTdsAmount(Math.round(((newAmt * quantity) * tdsPercentage) / 100));
+  };
+
   const handleInfluencerChange = (infId: string) => {
     setSelectedInfluencerId(infId);
+    // If not editing an existing invoice, generate sequential number for the newly selected influencer
+    if (!existingInvoice) {
+      setInvoiceNumber(db.getNextInvoiceNumber(infId));
+    }
     const inf = db.getInfluencerById(infId);
     if (inf) {
       setInfluencerName(inf.bankDetails.accountName || inf.name);
@@ -83,6 +149,7 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({ init
       setSelectedCampaignId(infCamps[0].id);
       setServiceDescription(infCamps[0].campaignName);
       setAmount(infCamps[0].dealAmount);
+      setTdsAmount(Math.round((infCamps[0].dealAmount * tdsPercentage) / 100));
       setClientName(infCamps[0].brandName.toUpperCase());
     }
   };
@@ -93,35 +160,104 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({ init
     if (c) {
       setServiceDescription(c.campaignName);
       setAmount(c.dealAmount);
+      setTdsAmount(Math.round((c.dealAmount * tdsPercentage) / 100));
       setClientName(c.brandName.toUpperCase());
     }
   };
 
+  const saveInvoiceRecord = () => {
+    const totalGross = amount * quantity;
+    const finalAmount = totalGross - tdsAmount;
+
+    const invoiceData: Invoice = {
+      id: existingInvoice?.id || `inv-${Date.now()}`,
+      invoiceNumber,
+      influencerId: selectedInfluencerId,
+      influencerName,
+      clientName,
+      clientAddress,
+      clientGstin,
+      campaignId: selectedCampaignId,
+      campaignName: serviceDescription,
+      serviceDescription,
+      invoiceDate: invoiceDateText,
+      dueDate: dueDateText,
+      amount: totalGross,
+      tdsAmount,
+      tdsPercentage,
+      finalAmount,
+      paymentStatus,
+      generatedDate: existingInvoice?.generatedDate || new Date().toISOString()
+    };
+
+    db.saveInvoice(invoiceData);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
   const handleDownloadPDF = async () => {
+    saveInvoiceRecord();
     const fullInvoiceTo = `${clientName}\n${clientAddress}\nGSTIN - ${clientGstin}`;
     db.generateInvoice(selectedCampaignId, invoiceDateText, fullInvoiceTo, serviceDescription);
     await pdfService.exportInvoice(invoiceNumber);
   };
 
+  const netPayable = (amount * quantity) - tdsAmount;
+
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-cyan-400" /> Commercial Invoice Generator
-          </h2>
-          <p className="text-xs text-slate-400">
-            Recreated strictly matching your reference invoice layout with dynamic fields.
+          <div className="flex items-center gap-2">
+            {onNavigateToInvoices && (
+              <button
+                onClick={onNavigateToInvoices}
+                className="text-slate-400 hover:text-cyan-400 p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                title="Back to Invoices"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-cyan-400" /> Commercial Invoice Generator
+            </h2>
+          </div>
+          <p className="text-xs text-slate-400 ml-7">
+            Sequential auto-numbering per creator (<span className="text-cyan-400 font-mono">[Prefix]-[Year]-[0001]</span>).
+            {existingInvoice && (
+              <span className="text-amber-400 font-medium ml-1">
+                Editing existing invoice #{existingInvoice.invoiceNumber}
+              </span>
+            )}
           </p>
         </div>
 
-        <button
-          onClick={handleDownloadPDF}
-          className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
-        >
-          <Download className="w-4 h-4" />
-          <span>Export Invoice PDF</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={saveInvoiceRecord}
+            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2.5 rounded-xl border border-tech-border active:scale-95 transition-all"
+          >
+            {saveSuccess ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400">Saved</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 text-cyan-400" />
+                <span>Save Record</span>
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handleDownloadPDF}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
+          >
+            <Download className="w-4 h-4" />
+            <span>Save & Export PDF</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -140,7 +276,7 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({ init
             >
               {influencers.map(i => (
                 <option key={i.id} value={i.id}>
-                  {i.name}
+                  {i.name} ({i.invoicePrefix || 'INF'})
                 </option>
               ))}
             </select>
@@ -165,16 +301,16 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({ init
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-400 mb-1">Invoice No</label>
+              <label className="block text-slate-400 mb-1">Invoice No (Auto)</label>
               <input
                 type="text"
                 value={invoiceNumber}
                 onChange={e => setInvoiceNumber(e.target.value)}
-                className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded p-2 font-mono"
+                className="w-full bg-[#0b0f17] border border-cyan-500/50 text-cyan-400 font-bold rounded p-2 font-mono"
               />
             </div>
             <div>
-              <label className="block text-slate-400 mb-1">Date String</label>
+              <label className="block text-slate-400 mb-1">Date</label>
               <input
                 type="text"
                 value={invoiceDateText}
@@ -182,6 +318,32 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({ init
                 className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded p-2"
                 placeholder="21st August 2026"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-400 mb-1">Due Date</label>
+              <input
+                type="text"
+                value={dueDateText}
+                onChange={e => setDueDateText(e.target.value)}
+                className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded p-2"
+                placeholder="20th September 2026"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1">Invoice Status</label>
+              <select
+                value={paymentStatus}
+                onChange={e => setPaymentStatus(e.target.value as any)}
+                className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded p-2"
+              >
+                <option value="Draft">Draft</option>
+                <option value="Issued">Issued</option>
+                <option value="Paid">Paid</option>
+                <option value="Pending">Pending</option>
+              </select>
             </div>
           </div>
 
@@ -255,7 +417,7 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({ init
                 <input
                   type="number"
                   value={amount}
-                  onChange={e => setAmount(Number(e.target.value))}
+                  onChange={e => handleAmountChange(Number(e.target.value))}
                   className="w-full bg-[#0b0f17] border border-tech-border text-cyan-400 rounded p-2 font-mono font-bold"
                 />
               </div>
@@ -268,6 +430,32 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({ init
                   className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded p-2 font-mono"
                 />
               </div>
+            </div>
+
+            {/* TDS configuration */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-400 mb-1">TDS %</label>
+                <input
+                  type="number"
+                  value={tdsPercentage}
+                  onChange={e => handleTdsPercentageChange(Number(e.target.value))}
+                  className="w-full bg-[#0b0f17] border border-tech-border text-amber-400 rounded p-2 font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">TDS Amount (₹)</label>
+                <input
+                  type="number"
+                  value={tdsAmount}
+                  onChange={e => setTdsAmount(Number(e.target.value))}
+                  className="w-full bg-[#0b0f17] border border-tech-border text-amber-400 rounded p-2 font-mono font-bold"
+                />
+              </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-[#080b12] border border-tech-border flex justify-between items-center text-xs">
+              <span className="text-slate-400">Net Receivable:</span>
+              <span className="font-mono font-bold text-emerald-400">₹{netPayable.toLocaleString('en-IN')}</span>
             </div>
           </div>
 

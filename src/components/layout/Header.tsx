@@ -179,7 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <Shield className="w-4 h-4 text-cyan-400" />
                         <div>
                           <div className="font-bold text-xs">Admin Control Center</div>
-                          <div className="text-[10px] text-slate-400 font-normal">Full Agency Access</div>
+                          <div className="text-[10px] text-slate-400 font-normal">Independent Talent Manager Operations</div>
                         </div>
                       </div>
                     </button>

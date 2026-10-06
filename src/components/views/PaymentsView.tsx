@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { db } from '../../services/db';
 import { authService } from '../../services/authService';
-import { CreditCard, DollarSign, Clock, AlertTriangle, CheckCircle, MessageSquare, Filter } from 'lucide-react';
+import { CreditCard, IndianRupee, Clock, AlertTriangle, CheckCircle, MessageSquare, Filter } from 'lucide-react';
 
 interface PaymentsViewProps {
   onSelectCampaign: (id: string) => void;
@@ -53,7 +53,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
           </h2>
           <p className="text-xs text-slate-400">
             {isAdmin
-              ? 'Agency receivables tracker with automatic payment term calculations & overdue status.'
+              ? 'Independent receivables tracker with automatic payment term calculations & overdue status.'
               : 'Your personal payment tracker with status indicators and due date countdowns.'}
           </p>
         </div>

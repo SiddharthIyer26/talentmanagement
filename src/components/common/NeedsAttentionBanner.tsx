@@ -1,7 +1,7 @@
 import React from 'react';
 import { db } from '../../services/db';
 import { Campaign } from '../../types';
-import { AlertCircle, Clock, CheckCircle2, ArrowRight, DollarSign } from 'lucide-react';
+import { AlertCircle, Clock, CheckCircle2, ArrowRight, IndianRupee } from 'lucide-react';
 
 interface NeedsAttentionBannerProps {
   onSelectCampaign: (id: string) => void;
@@ -57,7 +57,7 @@ export const NeedsAttentionBanner: React.FC<NeedsAttentionBannerProps> = ({ onSe
           <div>
             <div className="flex items-center justify-between text-xs font-semibold text-red-400 mb-2">
               <span className="flex items-center gap-1.5">
-                <DollarSign className="w-3.5 h-3.5" /> Payments Overdue
+                <IndianRupee className="w-3.5 h-3.5" /> Payments Overdue
               </span>
               <span className="font-mono text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">
                 {overdueCampaigns.length}

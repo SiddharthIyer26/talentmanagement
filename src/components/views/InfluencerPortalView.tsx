@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { authService } from '../../services/authService';
 import { db } from '../../services/db';
 import { Campaign } from '../../types';
 import {
   Briefcase,
-  DollarSign,
+  IndianRupee,
   Clock,
   CheckCircle2,
   Lock,
@@ -27,7 +27,8 @@ interface InfluencerPortalViewProps {
 
 export const InfluencerPortalView: React.FC<InfluencerPortalViewProps> = ({ onSelectCampaign }) => {
   const influencer = authService.getActiveInfluencer();
-  const [selectedMonth, setSelectedMonth] = useState('August 2026');
+  const availableMonths = db.getAvailableMonths();
+  const [selectedMonth, setSelectedMonth] = useState('ALL');
 
   if (!influencer) {
     return (
@@ -41,26 +42,10 @@ export const InfluencerPortalView: React.FC<InfluencerPortalViewProps> = ({ onSe
   // Strictly filter campaigns belonging ONLY to this logged-in influencer
   const myCampaigns = db.getCampaigns().filter(c => c.influencerId === influencer.id);
 
-  // Month-wise filtering options
-  const monthOptions = [
-    'August 2026',
-    'July 2026',
-    'June 2026',
-    'May 2026',
-    'April 2026',
-    'March 2026',
-    'All Time History'
-  ];
-
   const filteredCampaigns = myCampaigns.filter(c => {
-    if (selectedMonth === 'All Time History') return true;
-    if (selectedMonth === 'August 2026') return c.dealLockedDate.startsWith('2026-08');
-    if (selectedMonth === 'July 2026') return c.dealLockedDate.startsWith('2026-07');
-    if (selectedMonth === 'June 2026') return c.dealLockedDate.startsWith('2026-06');
-    if (selectedMonth === 'May 2026') return c.dealLockedDate.startsWith('2026-05');
-    if (selectedMonth === 'April 2026') return c.dealLockedDate.startsWith('2026-04');
-    if (selectedMonth === 'March 2026') return c.dealLockedDate.startsWith('2026-03');
-    return true;
+    if (selectedMonth === 'ALL') return true;
+    const cMonth = db.getCampaignMonthLabel(c);
+    return cMonth.trim().toLowerCase() === selectedMonth.trim().toLowerCase();
   });
 
   // Current Details Math (Requirements 14 & 15)
@@ -166,7 +151,10 @@ export const InfluencerPortalView: React.FC<InfluencerPortalViewProps> = ({ onSe
               onChange={e => setSelectedMonth(e.target.value)}
               className="bg-transparent text-cyan-300 font-bold focus:outline-none cursor-pointer text-xs"
             >
-              {monthOptions.map(m => (
+              <option value="ALL" className="bg-[#0b0f17] text-slate-200">
+                All Months ({availableMonths.length} available)
+              </option>
+              {availableMonths.map(m => (
                 <option key={m} value={m} className="bg-[#0b0f17] text-slate-200">
                   {m}
                 </option>

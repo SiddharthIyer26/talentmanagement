@@ -13,7 +13,7 @@ import {
   Cell,
   CartesianGrid
 } from 'recharts';
-import { BarChart3, TrendingUp, DollarSign, Calendar, Eye, Sparkles, Award, Lock } from 'lucide-react';
+import { BarChart3, TrendingUp, IndianRupee, Calendar, Eye, Sparkles, Award, Lock, Share2, Heart, MessageCircle } from 'lucide-react';
 
 export const InfluencerAnalyticsView: React.FC = () => {
   const influencer = authService.getActiveInfluencer();
@@ -30,27 +30,14 @@ export const InfluencerAnalyticsView: React.FC = () => {
 
   // Strictly filter campaigns belonging ONLY to this logged-in creator
   const allMyCampaigns = db.getCampaigns().filter(c => c.influencerId === influencer.id);
-
-  const monthOptions = [
-    'All Time History',
-    'August 2026',
-    'July 2026',
-    'June 2026',
-    'May 2026',
-    'April 2026',
-    'March 2026'
-  ];
+  const dynamicMonths = db.getAvailableMonths(allMyCampaigns);
+  const monthOptions = ['All Time History', ...dynamicMonths];
 
   // Filter campaigns by selected month
   const filteredCampaigns = allMyCampaigns.filter(c => {
     if (selectedMonth === 'All Time History') return true;
-    if (selectedMonth === 'August 2026') return c.dealLockedDate.startsWith('2026-08');
-    if (selectedMonth === 'July 2026') return c.dealLockedDate.startsWith('2026-07');
-    if (selectedMonth === 'June 2026') return c.dealLockedDate.startsWith('2026-06');
-    if (selectedMonth === 'May 2026') return c.dealLockedDate.startsWith('2026-05');
-    if (selectedMonth === 'April 2026') return c.dealLockedDate.startsWith('2026-04');
-    if (selectedMonth === 'March 2026') return c.dealLockedDate.startsWith('2026-03');
-    return true;
+    const cMonth = db.getCampaignMonthLabel(c);
+    return cMonth.trim().toLowerCase() === selectedMonth.trim().toLowerCase();
   });
 
   // KPI Calculations
@@ -152,7 +139,7 @@ export const InfluencerAnalyticsView: React.FC = () => {
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
               {selectedMonth === 'All Time History' ? 'Selected Period Revenue' : `${selectedMonth.split(' ')[0]} Revenue`}
             </span>
-            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <IndianRupee className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2">
             <span className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono">
@@ -268,11 +255,11 @@ export const InfluencerAnalyticsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Campaign Details Table */}
+      {/* Campaign Details Table with Performance Stats including Shares */}
       <div className="bg-tech-card border border-tech-border rounded-2xl p-5">
         <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider mb-4 flex items-center justify-between">
           <span className="flex items-center gap-2">
-            <Eye className="w-4 h-4 text-cyan-400" /> Personal Commercial Breakdown
+            <Eye className="w-4 h-4 text-cyan-400" /> Personal Collaborations & Content Performance
           </span>
           <span className="text-[10px] text-slate-400 font-mono font-normal">Filtered: {selectedMonth}</span>
         </h3>
@@ -280,13 +267,15 @@ export const InfluencerAnalyticsView: React.FC = () => {
         <div className="overflow-x-auto text-xs">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-tech-border text-slate-400">
+              <tr className="border-b border-tech-border text-slate-400 text-[11px]">
                 <th className="py-2.5 px-3">Brand Partner</th>
                 <th className="py-2.5 px-3">Campaign</th>
-                <th className="py-2.5 px-3">Deal Value</th>
-                <th className="py-2.5 px-3">Payment Status</th>
-                <th className="py-2.5 px-3">Production Status</th>
-                <th className="py-2.5 px-3">Views</th>
+                <th className="py-2.5 px-3 text-right">Deal Value</th>
+                <th className="py-2.5 px-3 text-center">Status</th>
+                <th className="py-2.5 px-3 text-right">Views</th>
+                <th className="py-2.5 px-3 text-right">Likes</th>
+                <th className="py-2.5 px-3 text-right">Comments</th>
+                <th className="py-2.5 px-3 text-right">Shares</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-tech-border">
@@ -294,17 +283,25 @@ export const InfluencerAnalyticsView: React.FC = () => {
                 <tr key={idx} className="hover:bg-slate-800/40">
                   <td className="py-3 px-3 font-bold text-slate-200">{c.brandName}</td>
                   <td className="py-3 px-3 text-slate-300">{c.campaignName}</td>
-                  <td className="py-3 px-3 font-mono font-bold text-cyan-400">
+                  <td className="py-3 px-3 font-mono font-bold text-cyan-400 text-right">
                     ₹{c.dealAmount.toLocaleString('en-IN')}
                   </td>
-                  <td className="py-3 px-3">
-                    <span className={`font-mono text-[11px] font-bold ${c.paymentStatus === 'Received' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  <td className="py-3 px-3 text-center">
+                    <span className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded-full ${c.paymentStatus === 'Received' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
                       {c.paymentStatus}
                     </span>
                   </td>
-                  <td className="py-3 px-3 text-slate-300 text-[11px]">{c.productionStatus}</td>
-                  <td className="py-3 px-3 font-mono text-indigo-400">
-                    {c.metrics?.views ? (c.metrics.views / 1000).toFixed(0) + 'K' : 'N/A'}
+                  <td className="py-3 px-3 font-mono text-cyan-400 text-right">
+                    {(c.metrics?.views || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="py-3 px-3 font-mono text-pink-400 text-right">
+                    {(c.metrics?.likes || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="py-3 px-3 font-mono text-blue-400 text-right">
+                    {(c.metrics?.comments || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="py-3 px-3 font-mono text-purple-400 text-right font-bold">
+                    {(c.metrics?.shares || 0).toLocaleString('en-IN')}
                   </td>
                 </tr>
               ))}
