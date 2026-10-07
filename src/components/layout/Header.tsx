@@ -67,10 +67,8 @@ export const Header: React.FC<HeaderProps> = ({
             <Menu className="w-5 h-5" />
           </button>
 
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-purple-600 p-0.5 shadow-lg shadow-cyan-500/20 shrink-0">
-            <div className="w-full h-full bg-[#0b0f17] rounded-[10px] flex items-center justify-center">
-              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-cyan-400" />
-            </div>
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white p-0.5 shadow-lg shadow-cyan-500/20 shrink-0 border border-tech-border/60 flex items-center justify-center overflow-hidden">
+            <img src="/logo.png" alt="IYER TALENT OS" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="flex items-center space-x-1.5 sm:space-x-2">

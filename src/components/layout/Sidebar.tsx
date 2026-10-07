@@ -140,7 +140,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
 
         <div className="flex items-center justify-between text-slate-500 pt-1">
-          <span className="font-mono text-cyan-400 font-bold">IYER TALENT OS</span>
+          <div className="flex items-center space-x-1.5">
+            <div className="w-4 h-4 rounded bg-white p-0.5 overflow-hidden shrink-0 flex items-center justify-center">
+              <img src="/logo.png" alt="IYER TALENT OS" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-mono text-cyan-400 font-bold">IYER TALENT OS</span>
+          </div>
           <span className="text-slate-400 font-semibold">
             {isAdmin ? '🔑 Admin Mode' : '🔒 Creator Isolated'}
           </span>

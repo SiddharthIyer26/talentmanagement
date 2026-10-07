@@ -85,8 +85,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         
         {/* Branding Header & Time-Based Welcome */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500/20 via-cyan-400/30 to-indigo-600/30 border border-cyan-400/40 shadow-lg shadow-cyan-500/20 mb-1">
-            <Cpu className="w-8 h-8 text-cyan-400 animate-pulse" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white p-1.5 shadow-xl shadow-cyan-500/20 border border-tech-border/80 mb-2 overflow-hidden">
+            <img src="/logo.png" alt="IYER TALENT OS" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-1.5 font-mono">
             IYER <span className="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">TALENT OS</span>

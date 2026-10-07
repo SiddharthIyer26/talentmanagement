@@ -58,7 +58,9 @@ export const DailyWelcomeModal: React.FC<DailyWelcomeModalProps> = ({ onClose })
           {/* Header Badge & Greeting */}
           <div className="space-y-1.5">
             <div className="inline-flex items-center space-x-2 bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 rounded-full text-cyan-400 font-mono text-[11px]">
-              <Sparkles className="w-3.5 h-3.5" />
+              <div className="w-3.5 h-3.5 rounded bg-white p-0.5 overflow-hidden shrink-0 flex items-center justify-center">
+                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+              </div>
               <span>IYER TALENT OS • Daily Executive Digest</span>
             </div>
 
