@@ -157,8 +157,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Step 4.3: Ensure authenticated primary Owner (siddharthiyer.work@gmail.com) is recognized if active
-    if (!isAuthorizedAdmin && callerEmail === "siddharthiyer.work@gmail.com") {
+    // Step 4.3: Ensure authenticated primary Owner (siddharthiyer.work@gmail.com) and Admin (admin@iyer.tech) are recognized if active
+    if (!isAuthorizedAdmin && (callerEmail === "siddharthiyer.work@gmail.com" || callerEmail === "admin@iyer.tech")) {
       const rawStatus = (callerMgmt?.account_status || "active").trim().toLowerCase();
       if (rawStatus !== "disabled") {
         isAuthorizedAdmin = true;
@@ -293,6 +293,7 @@ Deno.serve(async (req: Request) => {
 
       // 3. Upsert management_users profile (Plaintext password is NEVER stored)
       if (existingMgmt) {
+        console.log("[DIAGNOSTIC EdgeFunction] Updating existing management user in public.management_users");
         const { error: dbErr } = await adminClient
           .from("management_users")
           .update({
@@ -305,9 +306,13 @@ Deno.serve(async (req: Request) => {
             updated_at: new Date().toISOString(),
           })
           .eq("id", existingMgmt.id);
-        if (dbErr) throw dbErr;
+        if (dbErr) {
+          console.error("[DIAGNOSTIC EdgeFunction] Error updating management_users:", dbErr.message);
+          throw new Error(`[Origin:EdgeFunction-Update-management_users, Code:${dbErr.code || 'UNKNOWN'}] ${dbErr.message}`);
+        }
       } else {
-        const { error: dbErr } = await adminClient.from("management_users").insert({
+        console.log("[DIAGNOSTIC EdgeFunction] Upserting new management user in public.management_users");
+        const { error: dbErr } = await adminClient.from("management_users").upsert({
           id: targetProfileId,
           name,
           email: targetEmail,
@@ -316,8 +321,12 @@ Deno.serve(async (req: Request) => {
           password: null,
           role: managementRole,
           account_status: "active",
-        });
-        if (dbErr) throw dbErr;
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "email" });
+        if (dbErr) {
+          console.error("[DIAGNOSTIC EdgeFunction] Error upserting management_users:", dbErr.message);
+          throw new Error(`[Origin:EdgeFunction-Upsert-management_users, Code:${dbErr.code || 'UNKNOWN'}] ${dbErr.message}`);
+        }
       }
 
       return new Response(

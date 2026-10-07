@@ -131,17 +131,6 @@ class AuthService {
             role: localMgmt.role,
             account_status: localMgmt.accountStatus || 'active'
           };
-          // Try to sync to cloud table in background
-          void supabase.from('management_users').upsert({
-            id: localMgmt.id,
-            name: localMgmt.name,
-            email: localMgmt.email,
-            phone: localMgmt.phone || null,
-            username: localMgmt.username,
-            password: null,
-            role: localMgmt.role || 'Talent Manager',
-            account_status: localMgmt.accountStatus || 'active'
-          }, { onConflict: 'email' });
         }
       }
 
@@ -218,22 +207,6 @@ class AuthService {
             avatar_url: localInf.avatarUrl,
             account_status: localInf.accountStatus || 'active'
           };
-          // Try to sync to cloud table in background
-          void supabase.from('influencers').upsert({
-            id: localInf.id,
-            name: localInf.name,
-            handle: localInf.handle,
-            city: localInf.city || null,
-            avatar_url: localInf.avatarUrl || null,
-            bio: localInf.bio || null,
-            email: localInf.email,
-            phone: localInf.phone || null,
-            pan: localInf.pan || null,
-            username: localInf.username,
-            password: null,
-            account_status: localInf.accountStatus || 'active',
-            invoice_prefix: localInf.invoicePrefix || localInf.name.slice(0, 2).toUpperCase()
-          }, { onConflict: 'id' });
         }
       }
 
@@ -491,17 +464,6 @@ class AuthService {
             role: localMgmtUser.role,
             account_status: localMgmtUser.accountStatus || 'active'
           };
-          // Sync to cloud table
-          void supabase.from('management_users').upsert({
-            id: localMgmtUser.id,
-            name: localMgmtUser.name,
-            email: localMgmtUser.email,
-            phone: localMgmtUser.phone || null,
-            username: localMgmtUser.username,
-            password: null,
-            role: localMgmtUser.role || 'Talent Manager',
-            account_status: localMgmtUser.accountStatus || 'active'
-          }, { onConflict: 'email' });
         }
       }
 
@@ -583,22 +545,6 @@ class AuthService {
             avatar_url: localInfUser.avatarUrl,
             account_status: localInfUser.accountStatus || 'active'
           };
-          // Sync to cloud table
-          void supabase.from('influencers').upsert({
-            id: localInfUser.id,
-            name: localInfUser.name,
-            handle: localInfUser.handle,
-            city: localInfUser.city || null,
-            avatar_url: localInfUser.avatarUrl || null,
-            bio: localInfUser.bio || null,
-            email: localInfUser.email,
-            phone: localInfUser.phone || null,
-            pan: localInfUser.pan || null,
-            username: localInfUser.username,
-            password: null,
-            account_status: localInfUser.accountStatus || 'active',
-            invoice_prefix: localInfUser.invoicePrefix || localInfUser.name.slice(0, 2).toUpperCase()
-          }, { onConflict: 'id' });
         }
       }
 
@@ -692,10 +638,7 @@ class AuthService {
       accountStatus: userData.accountStatus || 'active'
     };
 
-    // Save to local DB first
-    db.saveManagementUser(updatedRecord);
-
-    // Call Supabase Edge Function to provision in Supabase Auth & cloud table
+    // Call Supabase Edge Function to provision in Supabase Auth & cloud table securely
     if (isSupabaseConfigured() && supabase) {
       try {
         const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('admin-manage-credentials', {
@@ -713,20 +656,33 @@ class AuthService {
 
         if (edgeErr) {
           let msg = edgeErr.message;
+          let code = (edgeErr as any).code || '';
+          let status = (edgeErr as any).status || '';
           try {
             if ((edgeErr as any).context && typeof (edgeErr as any).context.json === 'function') {
               const body = await (edgeErr as any).context.json();
               if (body && body.message) msg = body.message;
+              if (body && body.code) code = body.code;
             }
           } catch {}
-          return { success: false, message: msg };
+          console.error('[DIAGNOSTIC] Edge Function error:', { status, code, msg });
+          return { success: false, message: msg.includes('[Origin:') ? msg : `[Origin:EdgeFunction-Invoke] ${msg}` };
         } else if (edgeData && !edgeData.success) {
-          return { success: false, message: edgeData.message || 'Failed to provision account in Supabase Auth.' };
+          console.error('[DIAGNOSTIC] Edge Function data failure:', edgeData);
+          return { success: false, message: `[Origin:EdgeFunction-Payload] ${edgeData.message || 'Failed to provision account in Supabase Auth.'}` };
+        }
+
+        if (edgeData?.profileId) {
+          updatedRecord.id = edgeData.profileId;
         }
       } catch (err: any) {
-        return { success: false, message: err.message || 'Error provisioning management account.' };
+        console.error('[DIAGNOSTIC] Frontend exception invoking Edge Function:', err);
+        return { success: false, message: `[Origin:Frontend-authService] ${err.message || 'Error provisioning management account.'}` };
       }
     }
+
+    // Save to local DB only after successful cloud provisioning
+    db.saveManagementUser(updatedRecord);
 
     return {
       success: true,
@@ -957,45 +913,38 @@ class AuthService {
 
     try {
       const mgmtUsers = db.getManagementUsers();
-      if (mgmtUsers.length > 0) {
-        await supabase.from('management_users').upsert(
-          mgmtUsers.map(u => ({
-            id: u.id,
-            name: u.name,
+      for (const u of mgmtUsers) {
+        await supabase.functions.invoke('admin-manage-credentials', {
+          body: {
+            action: 'provision_management_user',
             email: u.email,
-            phone: u.phone || null,
+            name: u.name,
             username: u.username,
-            password: null,
-            role: u.role || 'Talent Manager',
-            account_status: u.accountStatus || 'active'
-          })),
-          { onConflict: 'email' }
-        );
+            phone: u.phone,
+            managementRole: u.role,
+            managementId: u.id
+          }
+        });
       }
 
       const influencers = db.getInfluencers();
-      if (influencers.length > 0) {
-        await supabase.from('influencers').upsert(
-          influencers.map(inf => ({
-            id: inf.id,
+      for (const inf of influencers) {
+        await supabase.functions.invoke('admin-manage-credentials', {
+          body: {
+            action: 'provision_influencer',
+            email: inf.email,
             name: inf.name,
             handle: inf.handle,
-            city: inf.city || null,
-            avatar_url: inf.avatarUrl || null,
-            bio: inf.bio || null,
-            email: inf.email || null,
-            phone: inf.phone || null,
-            pan: inf.pan || null,
             username: inf.username,
-            password: null,
-            account_status: inf.accountStatus || 'active',
-            address: inf.address || null,
-            bank_details: inf.bankDetails || {},
-            rate_card: inf.rateCard || {},
-            invoice_prefix: inf.invoicePrefix || inf.name.slice(0, 2).toUpperCase()
-          })),
-          { onConflict: 'id' }
-        );
+            city: inf.city,
+            phone: inf.phone,
+            pan: inf.pan,
+            invoicePrefix: inf.invoicePrefix,
+            bankDetails: inf.bankDetails,
+            rateCard: inf.rateCard,
+            influencerId: inf.id
+          }
+        });
       }
 
       return { success: true, message: 'Successfully synced all workspace profiles to cloud tables.' };

@@ -3,8 +3,9 @@ import { DatabaseSchema } from './db';
 
 // Supabase Environment variables
 const env = (import.meta as any).env || {};
-const supabaseUrl: string = env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey: string = env.VITE_SUPABASE_ANON_KEY || '';
+const globalProcess = (globalThis as any).process;
+const supabaseUrl: string = env.VITE_SUPABASE_URL || globalProcess?.env?.VITE_SUPABASE_URL || '';
+const supabaseAnonKey: string = env.VITE_SUPABASE_ANON_KEY || globalProcess?.env?.VITE_SUPABASE_ANON_KEY || '';
 
 export const isSupabaseConfigured = (): boolean => {
   return Boolean(
@@ -225,25 +226,25 @@ export async function migrateLocalStorageToSupabase(localData: DatabaseSchema): 
   try {
     const counts: { [key: string]: number } = {};
 
-    // 1. Sync Management Users
+    // 1. Sync Management Users via Edge Function (No direct frontend table writes)
     if (localData.managementUsers && localData.managementUsers.length > 0) {
-      const { error: mgmtErr } = await supabase
-        .from('management_users')
-        .upsert(
-          localData.managementUsers.map(u => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            phone: u.phone || null,
-            username: u.username,
-            password: null, // Cloud auth is managed by Supabase Auth (auth.users), not plaintext columns
-            role: u.role || 'Talent Manager',
-            account_status: u.accountStatus || 'active'
-          })),
-          { onConflict: 'id' }
-        );
-
-      if (mgmtErr) throw new Error(`Management users sync: ${mgmtErr.message}`);
+      for (const u of localData.managementUsers) {
+        try {
+          await supabase.functions.invoke('admin-manage-credentials', {
+            body: {
+              action: 'provision_management_user',
+              email: u.email,
+              name: u.name,
+              username: u.username,
+              phone: u.phone,
+              managementRole: u.role,
+              managementId: u.id
+            }
+          });
+        } catch (edgeErr) {
+          console.warn('Notice syncing management user via Edge Function:', edgeErr);
+        }
+      }
       counts.managementUsers = localData.managementUsers.length;
     }
 

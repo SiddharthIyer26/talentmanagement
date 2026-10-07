@@ -699,6 +699,13 @@ CREATE POLICY admin_invoice_sequences_all ON public.invoice_sequences
 
 -- (NO POLICIES ARE DEFINED FOR 'anon'. All unauthenticated requests are strictly rejected by PostgreSQL RLS)
 
+-- 10.9 SERVER-SIDE SERVICE-ROLE TABLE GRANTS
+-- Strictly grants server-side administrative access to service_role (used exclusively by Supabase Edge Functions).
+-- Frontend 'anon' and 'authenticated' roles remain strictly blocked.
+GRANT USAGE ON SCHEMA public TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.management_users TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.influencers TO service_role;
+
 -- ==============================================================================
 -- 11. IDEMPOTENT WORKSPACE PROVISIONING & PRODUCTION AUTH SEEDING
 -- Safely ensures existing Management and Influencer workspace accounts are provisioned
