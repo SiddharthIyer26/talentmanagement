@@ -775,4 +775,28 @@ UPDATE public.campaigns
 SET talent_type = 'exclusive' 
 WHERE talent_type IS NULL;
 
+-- 12.2 Enable Supabase Realtime replication on core production tables for cross-device sync
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.influencers;
+    EXCEPTION WHEN duplicate_object THEN NULL; WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.campaigns;
+    EXCEPTION WHEN duplicate_object THEN NULL; WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.invoices;
+    EXCEPTION WHEN duplicate_object THEN NULL; WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.brands;
+    EXCEPTION WHEN duplicate_object THEN NULL; WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+END $$;
+
+
 

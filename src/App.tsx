@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { authService } from './services/authService';
 import { db } from './services/db';
 import { isSupabaseConfigured, supabase } from './services/supabase';
+import { setupRealtimeSync } from './services/cloudSync';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { GlobalSearchModal } from './components/common/GlobalSearchModal';
@@ -93,6 +94,46 @@ export const App: React.FC = () => {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Subscribe to all Database updates (local writes + incoming Realtime updates)
+  useEffect(() => {
+    const unsub = db.subscribe(() => {
+      forceRefresh();
+    });
+    return unsub;
+  }, []);
+
+  // Hydrate from Supabase and listen to Realtime updates across devices
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const session = authService.getSession();
+    const role: 'ADMIN' | 'INFLUENCER' = authService.isInfluencer() ? 'INFLUENCER' : 'ADMIN';
+    const influencerId = authService.isInfluencer() ? session.userId : undefined;
+
+    // 1. Initial Cloud Sync (Supabase is single source of truth)
+    db.syncFromSupabase(role, influencerId);
+
+    // 2. Realtime sync subscription for live cross-device events
+    const unsubRealtime = setupRealtimeSync((table, eventType, newRow, oldRow) => {
+      db.handleRealtimeEvent(table, eventType, newRow, oldRow);
+    });
+
+    // 3. Re-sync whenever browser tab/window is refocused (laptop or phone wake-up)
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        db.syncFromSupabase(role, influencerId);
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      unsubRealtime();
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [isAuthenticated, activeRole]);
 
   // Check Daily Welcome status when authenticating or loading session
   useEffect(() => {

@@ -130,16 +130,24 @@ export const InvoicesManagementView: React.FC<InvoicesManagementViewProps> = ({
     };
   }, [filteredInvoices]);
 
-  const handleStatusChange = (inv: Invoice, newStatus: 'Draft' | 'Issued' | 'Paid' | 'Pending') => {
-    const updated = { ...inv, paymentStatus: newStatus };
-    db.saveInvoice(updated);
-    setInvoices(db.getInvoices());
+  const handleStatusChange = async (inv: Invoice, newStatus: 'Draft' | 'Issued' | 'Paid' | 'Pending') => {
+    try {
+      const updated = { ...inv, paymentStatus: newStatus };
+      await db.saveInvoice(updated);
+      setInvoices(db.getInvoices());
+    } catch (err: any) {
+      alert(`Error updating invoice status: ${err?.message || 'Database write rejected'}`);
+    }
   };
 
-  const handleDelete = (inv: Invoice) => {
-    db.deleteInvoice(inv.id);
-    setInvoices(db.getInvoices());
-    setDeleteConfirmInvoice(null);
+  const handleDelete = async (inv: Invoice) => {
+    try {
+      await db.deleteInvoice(inv.id);
+      setInvoices(db.getInvoices());
+      setDeleteConfirmInvoice(null);
+    } catch (err: any) {
+      alert(`Error deleting invoice: ${err?.message || 'Database delete rejected'}`);
+    }
   };
 
   const handleDownload = async (inv: Invoice) => {

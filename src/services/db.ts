@@ -13,6 +13,21 @@ import {
   TalentType,
   NonExclusiveTalentInfo
 } from '../types';
+import {
+  saveInfluencerCloud,
+  deleteInfluencerCloud,
+  saveCampaignCloud,
+  deleteCampaignCloud,
+  saveInvoiceCloud,
+  deleteInvoiceCloud,
+  saveBrandCloud,
+  deleteBrandCloud,
+  fetchCloudData,
+  cloudToInfluencer,
+  cloudToCampaign,
+  cloudToInvoice,
+  cloudToBrand
+} from './cloudSync';
 
 const LOCAL_STORAGE_KEY = 'talent_os_db_v1';
 
@@ -631,10 +646,163 @@ const SEED_DATA: DatabaseSchema = {
 
 class DatabaseService {
   private data: DatabaseSchema;
+  private listeners: Array<() => void> = [];
 
   constructor() {
     this.data = this.loadData();
     this.recalculateAutomation();
+  }
+
+  public subscribe(listener: () => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
+  public notifyListeners() {
+    this.listeners.forEach(cb => {
+      try {
+        cb();
+      } catch (err) {
+        console.warn('Notice in db subscriber:', err);
+      }
+    });
+  }
+
+  /**
+   * Cloud Single Source of Truth: Hydrates data directly from Supabase.
+   * If cloud contains data, SUPABASE WINS and overwrites local state.
+   */
+  public async syncFromSupabase(role: 'ADMIN' | 'INFLUENCER' = 'ADMIN', influencerId?: string): Promise<boolean> {
+    try {
+      const cloud = await fetchCloudData(role, influencerId);
+      if (!cloud) return false;
+
+      let changed = false;
+
+      if (role === 'ADMIN') {
+        if (cloud.influencers && cloud.influencers.length > 0) {
+          this.data.influencers = cloud.influencers;
+          changed = true;
+        }
+        if (cloud.campaigns && cloud.campaigns.length > 0) {
+          this.data.campaigns = cloud.campaigns;
+          changed = true;
+        }
+        if (cloud.brands && cloud.brands.length > 0) {
+          this.data.brands = cloud.brands;
+          changed = true;
+        }
+        if (cloud.invoices && cloud.invoices.length > 0) {
+          this.data.invoices = cloud.invoices;
+          changed = true;
+        }
+      } else if (role === 'INFLUENCER' && influencerId) {
+        // Merge cloud updates for the authenticated influencer
+        if (cloud.influencers && cloud.influencers.length > 0) {
+          const inf = cloud.influencers[0];
+          const idx = this.data.influencers.findIndex(i => i.id === inf.id);
+          if (idx !== -1) {
+            this.data.influencers[idx] = inf;
+          } else {
+            this.data.influencers.push(inf);
+          }
+          changed = true;
+        }
+        if (cloud.campaigns && cloud.campaigns.length > 0) {
+          // Replace or merge campaigns belonging to this influencer
+          const otherCampaigns = this.data.campaigns.filter(c => c.influencerId !== influencerId);
+          this.data.campaigns = [...cloud.campaigns, ...otherCampaigns];
+          changed = true;
+        }
+        if (cloud.invoices && cloud.invoices.length > 0) {
+          const otherInvoices = this.data.invoices.filter(inv => inv.influencerId !== influencerId);
+          this.data.invoices = [...cloud.invoices, ...otherInvoices];
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        this.recalculateAutomation();
+        this.saveData();
+        this.notifyListeners();
+      }
+      return true;
+    } catch (err) {
+      console.warn('Notice in syncFromSupabase:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Realtime Event Processor: Applies incoming Postgres changes directly to memory.
+   */
+  public handleRealtimeEvent(table: string, eventType: string, newRow?: any, oldRow?: any) {
+    let changed = false;
+
+    if (table === 'influencers') {
+      if (eventType === 'DELETE' && oldRow?.id) {
+        this.data.influencers = this.data.influencers.filter(i => i.id !== oldRow.id);
+        changed = true;
+      } else if (newRow && (eventType === 'INSERT' || eventType === 'UPDATE')) {
+        const inf = cloudToInfluencer(newRow);
+        const idx = this.data.influencers.findIndex(i => i.id === inf.id);
+        if (idx !== -1) {
+          this.data.influencers[idx] = inf;
+        } else {
+          this.data.influencers.push(inf);
+        }
+        changed = true;
+      }
+    } else if (table === 'campaigns') {
+      if (eventType === 'DELETE' && oldRow?.id) {
+        this.data.campaigns = this.data.campaigns.filter(c => c.id !== oldRow.id);
+        changed = true;
+      } else if (newRow && (eventType === 'INSERT' || eventType === 'UPDATE')) {
+        const camp = cloudToCampaign(newRow);
+        const idx = this.data.campaigns.findIndex(c => c.id === camp.id);
+        if (idx !== -1) {
+          this.data.campaigns[idx] = camp;
+        } else {
+          this.data.campaigns.unshift(camp);
+        }
+        changed = true;
+      }
+      if (changed) {
+        this.recalculateAutomation();
+      }
+    } else if (table === 'invoices') {
+      if (eventType === 'DELETE' && oldRow?.id) {
+        this.data.invoices = this.data.invoices.filter(inv => inv.id !== oldRow.id);
+        changed = true;
+      } else if (newRow && (eventType === 'INSERT' || eventType === 'UPDATE')) {
+        const inv = cloudToInvoice(newRow);
+        const idx = this.data.invoices.findIndex(i => i.id === inv.id);
+        if (idx !== -1) {
+          this.data.invoices[idx] = inv;
+        } else {
+          this.data.invoices.unshift(inv);
+        }
+        changed = true;
+      }
+    } else if (table === 'brands') {
+      if (newRow && (eventType === 'INSERT' || eventType === 'UPDATE')) {
+        const b = cloudToBrand(newRow);
+        const idx = this.data.brands.findIndex(br => br.id === b.id);
+        if (idx !== -1) {
+          this.data.brands[idx] = b;
+        } else {
+          this.data.brands.push(b);
+        }
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.saveData();
+      this.notifyListeners();
+    }
   }
 
   private loadData(): DatabaseSchema {
@@ -890,7 +1058,7 @@ class DatabaseService {
 
   // --- Entity Mutations ---
 
-  public saveInvoice(invoiceData: Partial<Invoice>): Invoice {
+  public async saveInvoice(invoiceData: Partial<Invoice>): Promise<Invoice> {
     try {
       const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
       if (storedAuth) {
@@ -919,8 +1087,10 @@ class DatabaseService {
           // Never change invoiceNumber on update
           invoiceNumber: existing.invoiceNumber
         };
+        await saveInvoiceCloud(updated);
         this.data.invoices[idx] = updated;
         this.saveData();
+        this.notifyListeners();
         return updated;
       }
     }
@@ -962,12 +1132,14 @@ class DatabaseService {
       notes: invoiceData.notes
     };
 
+    await saveInvoiceCloud(newInvoice);
     this.data.invoices.unshift(newInvoice);
     this.saveData();
+    this.notifyListeners();
     return newInvoice;
   }
 
-  public deleteInvoice(invoiceId: string): boolean {
+  public async deleteInvoice(invoiceId: string): Promise<boolean> {
     try {
       const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
       if (storedAuth) {
@@ -980,12 +1152,14 @@ class DatabaseService {
       if (e.message && e.message.includes('Unauthorized')) throw e;
     }
 
+    await deleteInvoiceCloud(invoiceId);
     this.data.invoices = this.data.invoices.filter(inv => inv.id !== invoiceId && inv.invoiceNumber !== invoiceId);
     this.saveData();
+    this.notifyListeners();
     return true;
   }
 
-  public deleteCampaign(campaignId: string): boolean {
+  public async deleteCampaign(campaignId: string): Promise<boolean> {
     try {
       const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
       if (storedAuth) {
@@ -998,12 +1172,14 @@ class DatabaseService {
       if (e.message && e.message.includes('Unauthorized')) throw e;
     }
 
+    await deleteCampaignCloud(campaignId);
     this.data.campaigns = this.data.campaigns.filter(c => c.id !== campaignId);
-    this.saveData();
+    this.recalculateAutomation();
+    this.notifyListeners();
     return true;
   }
 
-  public deleteBrand(brandId: string): { success: boolean; affectedCampaigns: number } {
+  public async deleteBrand(brandId: string): Promise<{ success: boolean; affectedCampaigns: number }> {
     try {
       const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
       if (storedAuth) {
@@ -1016,13 +1192,15 @@ class DatabaseService {
       if (e.message && e.message.includes('Unauthorized')) throw e;
     }
 
+    await deleteBrandCloud(brandId);
     const affected = this.data.campaigns.filter(c => c.brandId === brandId).length;
     this.data.brands = this.data.brands.filter(b => b.id !== brandId);
     this.saveData();
+    this.notifyListeners();
     return { success: true, affectedCampaigns: affected };
   }
 
-  public saveCampaign(campaign: Partial<Campaign>): Campaign {
+  public async saveCampaign(campaign: Partial<Campaign>): Promise<Campaign> {
     try {
       const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
       if (storedAuth) {
@@ -1049,9 +1227,14 @@ class DatabaseService {
       ? campaign.tdsDeductedAmount
       : Math.round(lockedCommercial * (tdsDeductedPercentage / 100));
 
+    let targetCampaign: Campaign;
+    let isUpdate = false;
+    let idx = -1;
+
     if (campaign.id) {
-      const idx = this.data.campaigns.findIndex(c => c.id === campaign.id);
+      idx = this.data.campaigns.findIndex(c => c.id === campaign.id);
       if (idx !== -1) {
+        isUpdate = true;
         const existing = this.data.campaigns[idx];
         const updated = {
           ...existing,
@@ -1097,55 +1280,64 @@ class DatabaseService {
           });
         }
 
-        this.data.campaigns[idx] = updated;
-        this.recalculateAutomation();
-        return updated;
+        targetCampaign = updated;
+      } else {
+        targetCampaign = campaign as Campaign;
       }
+    } else {
+      // New Campaign
+      const newId = 'camp-' + (100 + this.data.campaigns.length + 1);
+      const talentType: TalentType = campaign.talentType || 'exclusive';
+      targetCampaign = {
+        id: newId,
+        talentType,
+        nonExclusiveTalent: talentType === 'non_exclusive' ? campaign.nonExclusiveTalent : undefined,
+        influencerId: talentType === 'non_exclusive' ? (campaign.influencerId || 'non-exclusive') : (campaign.influencerId || ''),
+        brandId: campaign.brandId || '',
+        brandName: campaign.brandName || 'Brand',
+        campaignName: campaign.campaignName || 'New Campaign',
+        dealAmount: lockedCommercial,
+        lockedCommercial,
+        receivedCommercial: campaign.receivedCommercial || 0,
+        tdsDeductedAmount,
+        tdsDeductedPercentage,
+        commissionPercentage,
+        commissionEarned,
+        dealLockedDate: campaign.dealLockedDate || new Date().toISOString().split('T')[0],
+        liveDate: campaign.liveDate,
+        paymentTermsDays: campaign.paymentTermsDays || 30,
+        productionStatus: campaign.productionStatus || 'Locked',
+        paymentStatus: campaign.paymentStatus || 'Pending',
+        deliverables: campaign.deliverables || [],
+        liveLink: campaign.liveLink,
+        notes: campaign.notes,
+        followUps: [],
+        activities: [
+          {
+            id: 'act-' + Date.now(),
+            timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
+            actor: 'Manager',
+            action: 'Campaign created'
+          }
+        ]
+      };
     }
 
-    // New Campaign
-    const newId = 'camp-' + (100 + this.data.campaigns.length + 1);
-    const talentType: TalentType = campaign.talentType || 'exclusive';
-    const newCampaign: Campaign = {
-      id: newId,
-      talentType,
-      nonExclusiveTalent: talentType === 'non_exclusive' ? campaign.nonExclusiveTalent : undefined,
-      influencerId: talentType === 'non_exclusive' ? (campaign.influencerId || 'non-exclusive') : (campaign.influencerId || ''),
-      brandId: campaign.brandId || '',
-      brandName: campaign.brandName || 'Brand',
-      campaignName: campaign.campaignName || 'New Campaign',
-      dealAmount: lockedCommercial,
-      lockedCommercial,
-      receivedCommercial: campaign.receivedCommercial || 0,
-      tdsDeductedAmount,
-      tdsDeductedPercentage,
-      commissionPercentage,
-      commissionEarned,
-      dealLockedDate: campaign.dealLockedDate || new Date().toISOString().split('T')[0],
-      liveDate: campaign.liveDate,
-      paymentTermsDays: campaign.paymentTermsDays || 30,
-      productionStatus: campaign.productionStatus || 'Locked',
-      paymentStatus: campaign.paymentStatus || 'Pending',
-      deliverables: campaign.deliverables || [],
-      liveLink: campaign.liveLink,
-      notes: campaign.notes,
-      followUps: [],
-      activities: [
-        {
-          id: 'act-' + Date.now(),
-          timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
-          actor: 'Manager',
-          action: 'Campaign created'
-        }
-      ]
-    };
+    // Step 3: MUST verify Supabase write FIRST before confirming success
+    await saveCampaignCloud(targetCampaign);
 
-    this.data.campaigns.unshift(newCampaign);
+    // Step 4: Update application state upon successful database response
+    if (isUpdate && idx !== -1) {
+      this.data.campaigns[idx] = targetCampaign;
+    } else {
+      this.data.campaigns.unshift(targetCampaign);
+    }
     this.recalculateAutomation();
-    return newCampaign;
+    this.notifyListeners();
+    return targetCampaign;
   }
 
-  public duplicateCampaign(campaignId: string): Campaign | null {
+  public async duplicateCampaign(campaignId: string): Promise<Campaign | null> {
     const original = this.getCampaignById(campaignId);
     if (!original) return null;
 
@@ -1170,10 +1362,10 @@ class DatabaseService {
       notes: original.notes
     };
 
-    return this.saveCampaign(copy);
+    return await this.saveCampaign(copy);
   }
 
-  public addFollowUp(campaignId: string, contactPerson: string, note: string, nextFollowUpDate: string) {
+  public async addFollowUp(campaignId: string, contactPerson: string, note: string, nextFollowUpDate: string): Promise<void> {
     const campaign = this.getCampaignById(campaignId);
     if (!campaign) return;
 
@@ -1193,10 +1385,16 @@ class DatabaseService {
       action: `Recorded brand follow-up with ${contactPerson}`
     });
 
+    await saveCampaignCloud(campaign);
     this.saveData();
+    this.notifyListeners();
   }
 
-  public saveInfluencer(influencer: Influencer) {
+  public async saveInfluencer(influencer: Influencer): Promise<Influencer> {
+    // Step 3: MUST verify Supabase write FIRST before confirming success
+    await saveInfluencerCloud(influencer);
+
+    // Step 4: Update application state upon successful database response
     const idx = this.data.influencers.findIndex(i => i.id === influencer.id);
     if (idx !== -1) {
       this.data.influencers[idx] = influencer;
@@ -1204,9 +1402,11 @@ class DatabaseService {
       this.data.influencers.push(influencer);
     }
     this.saveData();
+    this.notifyListeners();
+    return influencer;
   }
 
-  public deleteInfluencer(influencerId: string) {
+  public async deleteInfluencer(influencerId: string): Promise<boolean> {
     try {
       const storedAuth = localStorage.getItem('iyer_talent_os_auth_session_v2');
       if (storedAuth) {
@@ -1219,19 +1419,25 @@ class DatabaseService {
       if (e.message && e.message.includes('Unauthorized')) throw e;
     }
 
+    // Step 3: MUST verify Supabase write FIRST
+    await deleteInfluencerCloud(influencerId);
+
+    // Step 4: Update application state upon successful database response
     this.data.influencers = this.data.influencers.filter(i => i.id !== influencerId);
     this.saveData();
+    this.notifyListeners();
+    return true;
   }
 
-  public toggleInfluencerAccountStatus(influencerId: string, status: 'active' | 'disabled') {
+  public async toggleInfluencerAccountStatus(influencerId: string, status: 'active' | 'disabled'): Promise<void> {
     const influencer = this.getInfluencerById(influencerId);
     if (influencer) {
       influencer.accountStatus = status;
-      this.saveInfluencer(influencer);
+      await this.saveInfluencer(influencer);
     }
   }
 
-  public addMonthlyInsightsSnapshot(influencerId: string, snapshot: InstagramInsightsSnapshot) {
+  public async addMonthlyInsightsSnapshot(influencerId: string, snapshot: InstagramInsightsSnapshot): Promise<void> {
     const influencer = this.getInfluencerById(influencerId);
     if (!influencer) return;
     if (!influencer.monthlyInsightsSnapshots) {
@@ -1245,7 +1451,7 @@ class DatabaseService {
     } else {
       influencer.monthlyInsightsSnapshots.unshift(snapshot);
     }
-    this.saveInfluencer(influencer);
+    await this.saveInfluencer(influencer);
   }
 
   public getManagementUsers(): ManagementUser[] {
@@ -1358,7 +1564,8 @@ class DatabaseService {
     }
   }
 
-  public saveBrand(brand: Brand) {
+  public async saveBrand(brand: Brand): Promise<Brand> {
+    await saveBrandCloud(brand);
     const idx = this.data.brands.findIndex(b => b.id === brand.id);
     if (idx !== -1) {
       this.data.brands[idx] = brand;
@@ -1366,11 +1573,14 @@ class DatabaseService {
       this.data.brands.push(brand);
     }
     this.saveData();
+    this.notifyListeners();
+    return brand;
   }
 
   public saveExpense(expense: Expense) {
     this.data.expenses.unshift(expense);
     this.saveData();
+    this.notifyListeners();
   }
 
   public markNotificationRead(id: string) {
@@ -1378,10 +1588,11 @@ class DatabaseService {
     if (n) {
       n.read = true;
       this.saveData();
+      this.notifyListeners();
     }
   }
 
-  public generateInvoice(campaignId: string, invoiceDate: string, invoiceTo: string, serviceDescription: string): Invoice {
+  public async generateInvoice(campaignId: string, invoiceDate: string, invoiceTo: string, serviceDescription: string): Promise<Invoice> {
     const campaign = this.getCampaignById(campaignId);
     if (!campaign) throw new Error('Campaign not found');
     const influencer = this.getInfluencerById(campaign.influencerId);
@@ -1416,8 +1627,10 @@ class DatabaseService {
       generatedDate: new Date().toISOString()
     };
 
+    await saveInvoiceCloud(newInvoice);
     this.data.invoices.unshift(newInvoice);
     this.saveData();
+    this.notifyListeners();
     return newInvoice;
   }
 
@@ -1564,11 +1777,11 @@ class DatabaseService {
     return seeded;
   }
 
-  public saveFeaturedReels(influencerId: string, reels: MediaKitFeaturedReel[]): void {
+  public async saveFeaturedReels(influencerId: string, reels: MediaKitFeaturedReel[]): Promise<void> {
     const influencer = this.getInfluencerById(influencerId);
     if (influencer) {
       influencer.mediaKitFeaturedReels = reels;
-      this.saveData();
+      await this.saveInfluencer(influencer);
     }
   }
 

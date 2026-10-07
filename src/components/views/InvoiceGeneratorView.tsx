@@ -165,7 +165,7 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
     }
   };
 
-  const saveInvoiceRecord = () => {
+  const saveInvoiceRecord = async () => {
     const totalGross = amount * quantity;
     const finalAmount = totalGross - tdsAmount;
 
@@ -190,15 +190,19 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
       generatedDate: existingInvoice?.generatedDate || new Date().toISOString()
     };
 
-    db.saveInvoice(invoiceData);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    try {
+      await db.saveInvoice(invoiceData);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err: any) {
+      alert(`Error saving invoice: ${err?.message || 'Database write rejected'}`);
+    }
   };
 
   const handleDownloadPDF = async () => {
-    saveInvoiceRecord();
+    await saveInvoiceRecord();
     const fullInvoiceTo = `${clientName}\n${clientAddress}\nGSTIN - ${clientGstin}`;
-    db.generateInvoice(selectedCampaignId, invoiceDateText, fullInvoiceTo, serviceDescription);
+    await db.generateInvoice(selectedCampaignId, invoiceDateText, fullInvoiceTo, serviceDescription);
     await pdfService.exportInvoice(invoiceNumber);
   };
 

@@ -72,7 +72,7 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
     calculatedDueDatePreview = d.toISOString().split('T')[0];
   }
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (talentType === 'non_exclusive') {
@@ -106,34 +106,39 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
 
     const generatedTitle = campaignName || `${talentDisplayName} × ${finalBrandName}`;
 
-    const newCampaign = db.saveCampaign({
-      talentType,
-      influencerId: talentType === 'exclusive' ? influencerId : 'non-exclusive',
-      nonExclusiveTalent: talentType === 'non_exclusive' ? {
-        name: nonExclusiveName.trim(),
-        handle: nonExclusiveHandle.trim().startsWith('@') ? nonExclusiveHandle.trim() : `@${nonExclusiveHandle.trim()}`,
-        email: nonExclusiveContact.trim() || undefined
-      } : undefined,
-      brandId: brandId === 'NEW' ? 'brand-' + Date.now() : brandId,
-      brandName: finalBrandName,
-      campaignName: generatedTitle,
-      dealAmount: Number(lockedCommercial),
-      lockedCommercial: Number(lockedCommercial),
-      receivedCommercial: 0,
-      tdsDeductedAmount: Number(tdsDeductedAmount),
-      tdsDeductedPercentage: Number(tdsPercentage),
-      commissionEarned: Number(commissionEarned),
-      commissionPercentage: Number(commissionPercentage),
-      dealLockedDate,
-      liveDate: liveDate || undefined,
-      paymentTermsDays: Number(paymentTermsDays),
-      productionStatus,
-      paymentStatus: 'Pending',
-      deliverables: deliverablesList
-    });
+    try {
+      const newCampaign = await db.saveCampaign({
+        talentType,
+        influencerId: talentType === 'exclusive' ? influencerId : 'non-exclusive',
+        nonExclusiveTalent: talentType === 'non_exclusive' ? {
+          name: nonExclusiveName.trim(),
+          handle: nonExclusiveHandle.trim().startsWith('@') ? nonExclusiveHandle.trim() : `@${nonExclusiveHandle.trim()}`,
+          email: nonExclusiveContact.trim() || undefined
+        } : undefined,
+        brandId: brandId === 'NEW' ? 'brand-' + Date.now() : brandId,
+        brandName: finalBrandName,
+        campaignName: generatedTitle,
+        dealAmount: Number(lockedCommercial),
+        lockedCommercial: Number(lockedCommercial),
+        receivedCommercial: 0,
+        tdsDeductedAmount: Number(tdsDeductedAmount),
+        tdsDeductedPercentage: Number(tdsPercentage),
+        commissionEarned: Number(commissionEarned),
+        commissionPercentage: Number(commissionPercentage),
+        dealLockedDate,
+        liveDate: liveDate || undefined,
+        paymentTermsDays: Number(paymentTermsDays),
+        productionStatus,
+        paymentStatus: 'Pending',
+        deliverables: deliverablesList
+      });
 
-    onSuccess(newCampaign.id);
-    onClose();
+      onSuccess(newCampaign.id);
+      onClose();
+    } catch (err: any) {
+      console.error('Error creating campaign:', err);
+      alert(`Error creating collaboration in database: ${err?.message || 'Database write rejected'}`);
+    }
   };
 
   return (

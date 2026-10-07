@@ -228,7 +228,7 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
     setDeliverables(deliverables.filter(d => d.id !== id));
   };
 
-  const handleSaveAll = () => {
+  const handleSaveAll = async () => {
     const finalTermsText = paymentTermsOption === 'Custom' ? customPaymentTerms : paymentTermsOption;
 
     const patch: Partial<Campaign> = {
@@ -277,27 +277,40 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
       } : undefined
     };
 
-    db.saveCampaign(patch);
-    alert('Collaboration Details saved successfully!');
-    onRefresh();
-  };
-
-  const handleDuplicate = () => {
-    const dup = db.duplicateCampaign(campaign.id);
-    if (dup) {
-      alert(`Campaign duplicated as "${dup.campaignName}"!`);
+    try {
+      await db.saveCampaign(patch);
+      alert('Collaboration Details saved successfully!');
       onRefresh();
-      onClose();
+    } catch (err: any) {
+      console.error('Error saving collaboration:', err);
+      alert(`Error saving to database: ${err?.message || 'Database write rejected'}`);
     }
   };
 
-  const handleSaveFollowUp = (e: React.FormEvent) => {
+  const handleDuplicate = async () => {
+    try {
+      const dup = await db.duplicateCampaign(campaign.id);
+      if (dup) {
+        alert(`Campaign duplicated as "${dup.campaignName}"!`);
+        onRefresh();
+        onClose();
+      }
+    } catch (err: any) {
+      alert(`Error duplicating campaign: ${err?.message || 'Failed to duplicate'}`);
+    }
+  };
+
+  const handleSaveFollowUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fuNote) return;
-    db.addFollowUp(campaign.id, fuContactPerson, fuNote, fuNextDate);
-    setFuNote('');
-    setShowFollowUpForm(false);
-    onRefresh();
+    try {
+      await db.addFollowUp(campaign.id, fuContactPerson, fuNote, fuNextDate);
+      setFuNote('');
+      setShowFollowUpForm(false);
+      onRefresh();
+    } catch (err: any) {
+      alert(`Error recording follow-up: ${err?.message || 'Failed to save'}`);
+    }
   };
 
   return (
@@ -1309,11 +1322,15 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  db.deleteCampaign(campaign.id);
-                  setDeleteConfirmOpen(false);
-                  onRefresh();
-                  onClose();
+                onClick={async () => {
+                  try {
+                    await db.deleteCampaign(campaign.id);
+                    setDeleteConfirmOpen(false);
+                    onRefresh();
+                    onClose();
+                  } catch (err: any) {
+                    alert(`Error deleting collaboration: ${err?.message || 'Failed to delete'}`);
+                  }
                 }}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-rose-600/20"
               >

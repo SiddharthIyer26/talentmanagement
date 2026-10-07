@@ -77,7 +77,7 @@ export const BrandsView: React.FC = () => {
     setIsAddEditOpen(true);
   };
 
-  const handleSaveBrand = (e: React.FormEvent) => {
+  const handleSaveBrand = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name?.trim()) return;
 
@@ -91,17 +91,25 @@ export const BrandsView: React.FC = () => {
       notes: formData.notes?.trim() || ''
     };
 
-    db.saveBrand(brandToSave);
-    refreshData();
-    setSelectedBrand(brandToSave);
-    setIsAddEditOpen(false);
+    try {
+      await db.saveBrand(brandToSave);
+      refreshData();
+      setSelectedBrand(brandToSave);
+      setIsAddEditOpen(false);
+    } catch (err: any) {
+      alert(`Error saving brand: ${err?.message || 'Database write rejected'}`);
+    }
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!selectedBrand) return;
-    db.deleteBrand(selectedBrand.id);
-    setIsDeleteOpen(false);
-    refreshData();
+    try {
+      await db.deleteBrand(selectedBrand.id);
+      setIsDeleteOpen(false);
+      refreshData();
+    } catch (err: any) {
+      alert(`Error deleting brand: ${err?.message || 'Database delete rejected'}`);
+    }
   };
 
   const filteredBrands = brands.filter(b => {

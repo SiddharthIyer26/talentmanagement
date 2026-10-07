@@ -173,11 +173,15 @@ export const SettingsView: React.FC = () => {
   };
 
   // Creator Actions
-  const handleSaveInfluencerSettings = (e: React.FormEvent) => {
+  const handleSaveInfluencerSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    db.saveInfluencer(infFormData);
-    alert(`Profile & commercial rate card for ${infFormData.name} saved successfully!`);
-    triggerRefresh();
+    try {
+      await db.saveInfluencer(infFormData);
+      alert(`Profile & commercial rate card for ${infFormData.name} saved successfully!`);
+      triggerRefresh();
+    } catch (err: any) {
+      alert(`Error saving creator settings: ${err?.message || 'Database write rejected'}`);
+    }
   };
 
   const handleCreateNewInfluencer = async (e: React.FormEvent) => {
@@ -231,18 +235,26 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  const handleToggleInfAccountStatus = (inf: Influencer) => {
+  const handleToggleInfAccountStatus = async (inf: Influencer) => {
     const newStatus = inf.accountStatus === 'disabled' ? 'active' : 'disabled';
-    db.toggleInfluencerAccountStatus(inf.id, newStatus);
-    alert(`Account status for ${inf.name} set to ${newStatus.toUpperCase()}`);
-    triggerRefresh();
+    try {
+      await db.toggleInfluencerAccountStatus(inf.id, newStatus);
+      alert(`Account status for ${inf.name} set to ${newStatus.toUpperCase()}`);
+      triggerRefresh();
+    } catch (err: any) {
+      alert(`Error updating account status: ${err?.message || 'Database write rejected'}`);
+    }
   };
 
-  const handleDeleteInfluencer = (inf: Influencer) => {
+  const handleDeleteInfluencer = async (inf: Influencer) => {
     if (confirm(`Delete creator account "${inf.name}"?`)) {
-      db.deleteInfluencer(inf.id);
-      alert(`Influencer profile "${inf.name}" deleted.`);
-      triggerRefresh();
+      try {
+        await db.deleteInfluencer(inf.id);
+        alert(`Influencer profile "${inf.name}" deleted.`);
+        triggerRefresh();
+      } catch (err: any) {
+        alert(`Error deleting creator: ${err?.message || 'Database delete rejected'}`);
+      }
     }
   };
 

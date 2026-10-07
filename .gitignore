@@ -44,6 +44,7 @@ desktop.ini
 tmp/
 temp/
 *.tmp
+scratch/
 
 # Coverage
 coverage/

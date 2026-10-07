@@ -199,7 +199,7 @@ export const MediaKitGeneratorView: React.FC = () => {
     setIsCollabFormOpen(true);
   };
 
-  const handleSaveCollabForm = (e: React.FormEvent) => {
+  const handleSaveCollabForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!collabTitle.trim() || !collabViews || !collabReelUrl.trim()) {
       alert('Please fill in required fields: Collaboration Title, Views, and Reel URL.');
@@ -239,26 +239,26 @@ export const MediaKitGeneratorView: React.FC = () => {
     }
 
     setFeaturedReels(updated);
-    db.saveFeaturedReels(selectedInfluencer.id, updated);
+    await db.saveFeaturedReels(selectedInfluencer.id, updated);
     setIsCollabFormOpen(false);
     setEditingCollab(null);
   };
 
-  const handleDeleteCollab = (id: string) => {
+  const handleDeleteCollab = async (id: string) => {
     const updated = featuredReels.filter(r => r.id !== id);
     setFeaturedReels(updated);
-    db.saveFeaturedReels(selectedInfluencer.id, updated);
+    await db.saveFeaturedReels(selectedInfluencer.id, updated);
     setDeleteConfirmId(null);
   };
 
-  const handleMoveCollab = (index: number, direction: 'up' | 'down') => {
+  const handleMoveCollab = async (index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= featuredReels.length) return;
     const copy = [...featuredReels];
     const [moved] = copy.splice(index, 1);
     copy.splice(targetIndex, 0, moved);
     setFeaturedReels(copy);
-    db.saveFeaturedReels(selectedInfluencer.id, copy);
+    await db.saveFeaturedReels(selectedInfluencer.id, copy);
   };
 
   const handleExportPDF = async () => {

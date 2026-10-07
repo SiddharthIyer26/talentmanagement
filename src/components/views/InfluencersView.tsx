@@ -71,20 +71,29 @@ export const InfluencersView: React.FC = () => {
     setIsEditing(false);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    db.saveInfluencer(formData);
-    setSelectedInf(formData);
-    setIsEditing(false);
-    refreshInfluencers();
-    alert('Influencer profile updated successfully!');
+    try {
+      await db.saveInfluencer(formData);
+      setSelectedInf(formData);
+      setIsEditing(false);
+      refreshInfluencers();
+      alert('Influencer profile updated successfully!');
+    } catch (err: any) {
+      console.error('Error saving influencer:', err);
+      alert(`Error updating profile: ${err?.message || 'Database write rejected'}`);
+    }
   };
 
-  const handleDeleteInfluencer = () => {
+  const handleDeleteInfluencer = async () => {
     if (!selectedInf) return;
-    db.deleteInfluencer(selectedInf.id);
-    setIsDeleteModalOpen(false);
-    refreshInfluencers();
+    try {
+      await db.deleteInfluencer(selectedInf.id);
+      setIsDeleteModalOpen(false);
+      refreshInfluencers();
+    } catch (err: any) {
+      alert(`Error deleting influencer: ${err?.message || 'Failed to delete'}`);
+    }
   };
 
   const handleCreateInfluencer = async (e: React.FormEvent) => {
