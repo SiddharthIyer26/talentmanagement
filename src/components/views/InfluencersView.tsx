@@ -87,7 +87,7 @@ export const InfluencersView: React.FC = () => {
     refreshInfluencers();
   };
 
-  const handleCreateInfluencer = (e: React.FormEvent) => {
+  const handleCreateInfluencer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInfData.name.trim() || !newInfData.handle.trim()) {
       alert('Please provide creator Name and Handle!');
@@ -96,21 +96,17 @@ export const InfluencersView: React.FC = () => {
 
     const autoUsername = newInfData.username.trim() || newInfData.handle.replace(/[@\s]/g, '').toLowerCase();
     const autoPrefix = (newInfData.invoicePrefix.trim() || newInfData.name.trim().slice(0, 2)).toUpperCase();
+    const email = newInfData.email.trim() || `${autoUsername}@iyer.tech`;
 
-    const created: Influencer = {
-      id: 'inf-' + Date.now(),
+    const res = await authService.provisionInfluencer({
       name: newInfData.name.trim(),
       handle: newInfData.handle.startsWith('@') ? newInfData.handle.trim() : `@${newInfData.handle.trim()}`,
       city: newInfData.city.trim() || 'India',
-      avatarUrl: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80`,
-      bio: 'Technology content creator and ecosystem product reviewer.',
-      email: newInfData.email.trim() || `${autoUsername}@iyer.tech`,
+      email,
       phone: newInfData.phone.trim() || '+91 98000 00000',
       pan: newInfData.pan.trim().toUpperCase() || 'ABCDE1234F',
       username: autoUsername,
       password: newInfData.password.trim() || 'password123',
-      accountStatus: 'active',
-      address: newInfData.address.trim() || 'India',
       invoicePrefix: autoPrefix,
       bankDetails: {
         accountName: newInfData.accountName.trim() || `${newInfData.name.trim()} Media`,
@@ -129,46 +125,39 @@ export const InfluencersView: React.FC = () => {
         adRights30d: 25000,
         adRights90d: 60000,
         adRights1y: 150000
-      },
-      monthlyInsightsSnapshots: [
-        {
-          monthYear: 'August 2026',
-          views30d: 1200000,
-          reach30d: 950000,
-          interactions30d: 180000,
-          topAgeGroup: '18–34 (82%)',
-          genderDistribution: 'Male 70% / Female 30%',
-          topCities: ['Bengaluru', 'Mumbai', 'Delhi'],
-          dateRangeText: '1 Aug 2026 – 27 Aug 2026'
-        }
-      ]
-    };
-
-    db.saveInfluencer(created);
-    setIsAddModalOpen(false);
-    refreshInfluencers();
-    setSelectedInf(created);
-    setFormData(created);
-    setNewInfData({
-      name: '',
-      handle: '',
-      city: 'Bengaluru, India',
-      email: '',
-      phone: '+91 98000 00000',
-      username: '',
-      password: 'password123',
-      invoicePrefix: '',
-      reel: 75000,
-      collabReel: 95000,
-      storeVisitReel: 110000,
-      accountName: '',
-      bankName: 'HDFC Bank',
-      accountNumber: '998877665544',
-      ifsc: 'HDFC0000123',
-      pan: 'ABCDE1234F',
-      address: 'Tech Park, India'
+      }
     });
-    alert(`Influencer "${created.name}" created successfully! Invoice sequence prefix initialized to "${created.invoicePrefix}".`);
+
+    alert(res.message);
+    if (res.success) {
+      setIsAddModalOpen(false);
+      refreshInfluencers();
+      const all = db.getInfluencers();
+      const found = all.find(i => i.email === email) || all[0];
+      if (found) {
+        setSelectedInf(found);
+        setFormData(found);
+      }
+      setNewInfData({
+        name: '',
+        handle: '',
+        city: 'Bengaluru, India',
+        email: '',
+        phone: '+91 98000 00000',
+        username: '',
+        password: 'password123',
+        invoicePrefix: '',
+        reel: 75000,
+        collabReel: 95000,
+        storeVisitReel: 110000,
+        accountName: '',
+        bankName: 'HDFC Bank',
+        accountNumber: '998877665544',
+        ifsc: 'HDFC0000123',
+        pan: 'ABCDE1234F',
+        address: 'Tech Park, India'
+      });
+    }
   };
 
   const influencerCampaigns = selectedInf

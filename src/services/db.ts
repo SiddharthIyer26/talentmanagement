@@ -1240,10 +1240,20 @@ class DatabaseService {
         {
           id: 'mgmt-1',
           name: 'Siddharth Iyer',
-          email: 'siddharth@iyer.tech',
+          email: 'siddharthiyer.work@gmail.com',
           phone: '+91 98765 43210',
+          username: 'siddharth',
+          password: '',
+          role: 'Owner',
+          accountStatus: 'active'
+        },
+        {
+          id: 'mgmt-admin',
+          name: 'System Administrator',
+          email: 'admin@iyer.tech',
+          phone: '+91 98765 43211',
           username: 'admin',
-          password: 'admin123',
+          password: '',
           role: 'Owner',
           accountStatus: 'active'
         },
@@ -1253,12 +1263,56 @@ class DatabaseService {
           email: 'rahul@iyer.tech',
           phone: '+91 98123 45678',
           username: 'partner1',
-          password: 'partner123',
+          password: '',
           role: 'Partner',
           accountStatus: 'active'
         }
       ];
       this.saveData();
+    } else {
+      // 1. Ensure Siddharth's personal account is strictly username "siddharth"
+      let hasChanged = false;
+      const siddharth = this.data.managementUsers.find(
+        u => u.email.toLowerCase() === 'siddharthiyer.work@gmail.com'
+      );
+      if (siddharth && siddharth.username !== 'siddharth') {
+        siddharth.username = 'siddharth';
+        hasChanged = true;
+      }
+
+      // 2. Ensure any account with username "admin" is strictly mapped to admin@iyer.tech
+      const adminUsers = this.data.managementUsers.filter(u => u.username.toLowerCase() === 'admin');
+      adminUsers.forEach(u => {
+        if (u.email.toLowerCase() === 'siddharthiyer.work@gmail.com') {
+          u.username = 'siddharth';
+          hasChanged = true;
+        } else if (u.email.toLowerCase() !== 'admin@iyer.tech') {
+          u.email = 'admin@iyer.tech';
+          hasChanged = true;
+        }
+      });
+
+      // 3. Ensure the dedicated System Admin account exists
+      const hasAdmin = this.data.managementUsers.some(
+        u => u.username.toLowerCase() === 'admin' && u.email.toLowerCase() === 'admin@iyer.tech'
+      );
+      if (!hasAdmin) {
+        this.data.managementUsers.push({
+          id: 'mgmt-admin',
+          name: 'System Administrator',
+          email: 'admin@iyer.tech',
+          phone: '+91 98765 43211',
+          username: 'admin',
+          password: '',
+          role: 'Owner',
+          accountStatus: 'active'
+        });
+        hasChanged = true;
+      }
+
+      if (hasChanged) {
+        this.saveData();
+      }
     }
     return this.data.managementUsers;
   }

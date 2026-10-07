@@ -9,6 +9,7 @@
 -- 1. EXTENSIONS
 -- ==============================================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ==============================================================================
 -- 2. CORE UTILITY FUNCTIONS (Independent)
@@ -185,6 +186,92 @@ BEGIN
   LIMIT 1;
 END;
 $$;
+GRANT EXECUTE ON FUNCTION public.get_current_management_user() TO authenticated;
+
+-- Secure helper function for authenticated users to safely resolve their own influencer profile
+CREATE OR REPLACE FUNCTION public.get_current_influencer_user()
+RETURNS SETOF public.influencers
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+STABLE
+AS $$
+DECLARE
+  current_email TEXT;
+  target_id TEXT;
+BEGIN
+  target_id := public.current_influencer_id();
+  IF target_id <> '' THEN
+    RETURN QUERY
+    SELECT * FROM public.influencers
+    WHERE id = target_id AND account_status = 'active'
+    LIMIT 1;
+    IF FOUND THEN
+      RETURN;
+    END IF;
+  END IF;
+
+  current_email := coalesce(auth.email(), auth.jwt()->>'email', '');
+  IF current_email = '' THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT * FROM public.influencers
+  WHERE LOWER(email) = LOWER(current_email) AND account_status = 'active'
+  LIMIT 1;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.get_current_influencer_user() TO authenticated;
+
+-- Resolves username or handle to user email for Supabase Auth signInWithPassword
+CREATE OR REPLACE FUNCTION public.resolve_login_email(p_identifier TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+STABLE
+AS $$
+DECLARE
+  v_clean TEXT;
+  v_email TEXT;
+BEGIN
+  v_clean := LOWER(TRIM(p_identifier));
+  IF v_clean = '' THEN
+    RETURN NULL;
+  END IF;
+
+  -- 1. If it's already an email, verify existence and active status
+  IF v_clean LIKE '%@%' THEN
+    SELECT email INTO v_email FROM public.management_users WHERE LOWER(email) = v_clean AND account_status = 'active' LIMIT 1;
+    IF v_email IS NOT NULL THEN RETURN v_email; END IF;
+
+    SELECT email INTO v_email FROM public.influencers WHERE LOWER(email) = v_clean AND account_status = 'active' LIMIT 1;
+    IF v_email IS NOT NULL THEN RETURN v_email; END IF;
+
+    RETURN v_clean;
+  END IF;
+
+  -- 2. Resolve management_users by username
+  SELECT email INTO v_email FROM public.management_users
+  WHERE LOWER(username) = v_clean AND account_status = 'active'
+  LIMIT 1;
+  IF v_email IS NOT NULL THEN RETURN v_email; END IF;
+
+  -- 3. Resolve influencers by username or handle (strip leading '@')
+  v_clean := REGEXP_REPLACE(v_clean, '^@', '');
+  SELECT email INTO v_email FROM public.influencers
+  WHERE (LOWER(username) = v_clean OR LOWER(REGEXP_REPLACE(handle, '^@', '')) = v_clean)
+    AND account_status = 'active'
+  LIMIT 1;
+  IF v_email IS NOT NULL THEN RETURN v_email; END IF;
+
+  RETURN NULL;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.resolve_login_email(TEXT) TO anon, authenticated;
+
+-- (Authentication provisioning and password updates are handled exclusively via Supabase Edge Functions with Supabase Auth Admin API)
 
 -- ==============================================================================
 -- 5. SECURE VIEWS (Depends on public.brands and public.is_admin())
@@ -611,3 +698,34 @@ CREATE POLICY admin_invoice_sequences_all ON public.invoice_sequences
   WITH CHECK (public.is_admin());
 
 -- (NO POLICIES ARE DEFINED FOR 'anon'. All unauthenticated requests are strictly rejected by PostgreSQL RLS)
+
+-- ==============================================================================
+-- 11. IDEMPOTENT WORKSPACE PROVISIONING & PRODUCTION AUTH SEEDING
+-- Safely ensures existing Management and Influencer workspace accounts are provisioned
+-- in both public tables and Supabase Auth (auth.users).
+-- ZERO DATA OVERWRITES: Uses ON CONFLICT DO NOTHING to preserve all production records.
+-- ==============================================================================
+
+-- 11.1 Ensure active management users exist in public.management_users
+INSERT INTO public.management_users (id, name, email, phone, username, password, role, account_status)
+VALUES 
+  ('mgmt-1', 'Siddharth Iyer', 'siddharthiyer.work@gmail.com', '+91 98765 43210', 'admin', NULL, 'Owner', 'active'),
+  ('mgmt-2', 'Rahul Varma', 'rahul@iyer.tech', '+91 98123 45678', 'partner1', NULL, 'Partner', 'active')
+ON CONFLICT (email) DO UPDATE SET
+  account_status = 'active',
+  updated_at = NOW();
+
+-- 11.2 Ensure existing core influencers exist in public.influencers
+INSERT INTO public.influencers (
+  id, name, handle, city, avatar_url, bio, email, phone, pan, username, password, account_status, address, invoice_prefix
+) VALUES
+  ('inf-1', 'JD Tech', '@jdtech_official', 'Bengaluru, India', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80', 'Deep-dive technology analyst & AI workflow reviews.', 'collabs@jdtech.in', '+91 98765 43210', 'ABCDE1234F', 'jdtech', NULL, 'active', 'Suite 402, Cyber Heights, Indiranagar, Bengaluru - 560038', 'JD'),
+  ('inf-2', 'TechCraft Pro (Aarav Sharma)', '@techcraft_aarav', 'Delhi NCR, India', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80', 'Custom PC builder & hardware benchmarking specialist.', 'aarav@techcraftpro.com', '+91 98111 22334', 'BCDEF2345G', 'techcraft', NULL, 'active', '72 Cyber City, Sector 24, Gurugram - 122002', 'TC'),
+  ('inf-3', 'GadgetVision (Priya Nair)', '@gadgetvision_priya', 'Mumbai, India', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&auto=format&fit=crop&q=80', 'Consumer audio & wearable lifestyle tech reviews.', 'priya@gadgetvision.in', '+91 97654 32109', 'CDEFG3456H', 'gadgetvision', NULL, 'active', '14 Bandra Kurla Complex, Mumbai - 400051', 'GV'),
+  ('inf-4', 'FutureByte (Rohan Mehta)', '@futurebyte_rohan', 'Hyderabad, India', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80', 'DevOps tools, cloud infrastructure & AI assistants.', 'rohan@futurebyte.io', '+91 99887 76655', 'DEFGH4567I', 'futurebyte', NULL, 'active', 'Gachibowli Tech Hub, Hyderabad - 500032', 'FB'),
+  ('inf-5', 'VoltTech (Ananya Gupta)', '@volttech_ananya', 'Pune, India', 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80', 'EV technology, solar ecosystems & smart home automation.', 'ananya@volttech.in', '+91 95432 10987', 'EFGHI5678J', 'volttech', NULL, 'active', 'Viman Nagar Tech Park, Pune - 411014', 'VT')
+ON CONFLICT (id) DO UPDATE SET
+  account_status = 'active',
+  email = COALESCE(NULLIF(public.influencers.email, ''), EXCLUDED.email),
+  updated_at = NOW();
+

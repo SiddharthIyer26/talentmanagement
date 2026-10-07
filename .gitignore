@@ -51,5 +51,8 @@ coverage/
 # Vercel
 .vercel/
 
+# Supabase CLI temp
+supabase/.temp/
+
 # Misc
 *.local

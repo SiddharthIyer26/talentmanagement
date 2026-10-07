@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '../../services/db';
+import { authService } from '../../services/authService';
 import { Influencer, ManagementUser } from '../../types';
 import {
   Settings,
@@ -96,36 +97,42 @@ export const SettingsView: React.FC = () => {
   };
 
   // Management User Actions
-  const handleCreateManagementUser = (e: React.FormEvent) => {
+  const handleCreateManagementUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMgmtData.name || !newMgmtData.username || !newMgmtData.password) {
       alert('Please fill in Name, Username, and Password!');
       return;
     }
 
-    const created: ManagementUser = {
-      id: 'mgmt-' + Date.now(),
+    let email = (newMgmtData.email || '').trim();
+    if (newMgmtData.username.trim().toLowerCase() === 'admin') {
+      email = 'admin@iyer.tech';
+    } else if (!email) {
+      email = `${newMgmtData.username.trim()}@iyer.tech`;
+    }
+
+    const res = await authService.provisionManagementUser({
       name: newMgmtData.name,
-      email: newMgmtData.email || `${newMgmtData.username}@iyer.tech`,
+      email,
       phone: newMgmtData.phone || '+91 98000 00000',
       username: newMgmtData.username,
       password: newMgmtData.password,
-      role: newMgmtData.role,
-      accountStatus: 'active'
-    };
-
-    db.saveManagementUser(created);
-    alert(`Management Account Created! Username: ${created.username}, Role: ${created.role}`);
-    setIsAddingNewMgmt(false);
-    setNewMgmtData({
-      name: '',
-      email: '',
-      phone: '',
-      username: '',
-      password: '',
-      role: 'Partner'
+      role: newMgmtData.role
     });
-    triggerRefresh();
+
+    alert(res.message);
+    if (res.success) {
+      setIsAddingNewMgmt(false);
+      setNewMgmtData({
+        name: '',
+        email: '',
+        phone: '',
+        username: '',
+        password: '',
+        role: 'Partner'
+      });
+      triggerRefresh();
+    }
   };
 
   const handleToggleMgmtStatus = (user: ManagementUser) => {
@@ -143,7 +150,7 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  const handleSaveMgmtResetPassword = (userId: string) => {
+  const handleSaveMgmtResetPassword = async (userId: string) => {
     if (!newPasswordValue) {
       alert('Please enter a new password!');
       return;
@@ -151,12 +158,17 @@ export const SettingsView: React.FC = () => {
     const users = db.getManagementUsers();
     const u = users.find(x => x.id === userId);
     if (u) {
-      u.password = newPasswordValue;
-      db.saveManagementUser(u);
-      alert(`Password for ${u.name} updated to: ${newPasswordValue}`);
-      setPasswordResetMgmtId(null);
-      setNewPasswordValue('');
-      triggerRefresh();
+      let targetEmail = u.email;
+      if (u.username.toLowerCase() === 'admin' || u.id === 'mgmt-admin') {
+        targetEmail = 'admin@iyer.tech';
+      }
+      const res = await authService.resetUserPassword(targetEmail, newPasswordValue, 'ADMIN');
+      alert(res.message);
+      if (res.success) {
+        setPasswordResetMgmtId(null);
+        setNewPasswordValue('');
+        triggerRefresh();
+      }
     }
   };
 
@@ -168,34 +180,21 @@ export const SettingsView: React.FC = () => {
     triggerRefresh();
   };
 
-  const handleCreateNewInfluencer = (e: React.FormEvent) => {
+  const handleCreateNewInfluencer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInfData.name || !newInfData.handle || !newInfData.username) {
       alert('Please fill in Name, Handle, and Login Username!');
       return;
     }
 
-    const created: Influencer = {
-      id: 'inf-' + Date.now(),
+    const email = newInfData.email || `${newInfData.username}@iyer.tech`;
+    const res = await authService.provisionInfluencer({
       name: newInfData.name,
-      handle: newInfData.handle.startsWith('@') ? newInfData.handle : `@${newInfData.handle}`,
+      handle: newInfData.handle,
       city: newInfData.city,
-      avatarUrl: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80`,
-      bio: 'Technology content creator and ecosystem product reviewer.',
-      email: newInfData.email || `${newInfData.username}@iyer.tech`,
-      phone: '+91 98000 00000',
-      pan: 'ABCDE9999F',
+      email,
       username: newInfData.username,
       password: newInfData.password || 'password123',
-      accountStatus: 'active',
-      address: 'Tech Park, India',
-      bankDetails: {
-        accountName: `${newInfData.name} Media`,
-        bankName: 'HDFC Bank',
-        accountNumber: '998877665544',
-        ifsc: 'HDFC0000123',
-        pan: 'ABCDE9999F'
-      },
       rateCard: {
         reel: Number(newInfData.reel),
         collabReel: Number(newInfData.collabReel),
@@ -206,38 +205,30 @@ export const SettingsView: React.FC = () => {
         adRights30d: 25000,
         adRights90d: 60000,
         adRights1y: 150000
-      },
-      monthlyInsightsSnapshots: [
-        {
-          monthYear: 'August 2026',
-          views30d: 1500000,
-          reach30d: 1200000,
-          interactions30d: 220000,
-          topAgeGroup: '18–34 (80%)',
-          genderDistribution: 'Male 75% / Female 25%',
-          topCities: ['Mumbai', 'Bengaluru'],
-          dateRangeText: '1 Aug 2026 – 27 Aug 2026'
-        }
-      ]
-    };
-
-    db.saveInfluencer(created);
-    alert(`Influencer Account Created! Username: ${created.username}, Password: ${created.password}`);
-    setIsAddingNewInf(false);
-    setSelectedInfId(created.id);
-    setInfFormData(created);
-    setNewInfData({
-      name: '',
-      handle: '',
-      city: 'Mumbai, India',
-      email: '',
-      username: '',
-      password: '',
-      reel: 75000,
-      collabReel: 95000,
-      storeVisitReel: 110000
+      }
     });
-    triggerRefresh();
+
+    alert(res.message);
+    if (res.success) {
+      setIsAddingNewInf(false);
+      const created = db.getInfluencerById(infFormData.id) || db.getInfluencers()[0];
+      if (created) {
+        setSelectedInfId(created.id);
+        setInfFormData(created);
+      }
+      setNewInfData({
+        name: '',
+        handle: '',
+        city: 'Mumbai, India',
+        email: '',
+        username: '',
+        password: '',
+        reel: 75000,
+        collabReel: 95000,
+        storeVisitReel: 110000
+      });
+      triggerRefresh();
+    }
   };
 
   const handleToggleInfAccountStatus = (inf: Influencer) => {
@@ -255,20 +246,26 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  const handleSaveInfResetPassword = (infId: string) => {
+  const handleSaveInfResetPassword = async (infId: string) => {
     if (!newPasswordValue) {
       alert('Please enter a new password!');
       return;
     }
     const inf = db.getInfluencerById(infId);
-    if (inf) {
-      inf.password = newPasswordValue;
-      db.saveInfluencer(inf);
-      alert(`Password for ${inf.name} updated to: ${newPasswordValue}`);
-      setPasswordResetInfId(null);
-      setNewPasswordValue('');
-      triggerRefresh();
+    if (inf && inf.email) {
+      const res = await authService.resetUserPassword(inf.email, newPasswordValue, 'INFLUENCER', inf.id);
+      alert(res.message);
+      if (res.success) {
+        setPasswordResetInfId(null);
+        setNewPasswordValue('');
+        triggerRefresh();
+      }
     }
+  };
+
+  const handleSyncAllToCloud = async () => {
+    const res = await authService.syncAllProfilesToCloud();
+    alert(res.message);
   };
 
   return (
@@ -454,6 +451,13 @@ export const SettingsView: React.FC = () => {
               <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Active Management & Partner Accounts ({managementUsers.length} Users)
               </h3>
+              <button
+                onClick={handleSyncAllToCloud}
+                className="text-[10px] px-2.5 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/30 font-bold transition-colors"
+                title="Synchronize all management and influencer profiles to Supabase cloud tables"
+              >
+                Sync Profiles to Cloud
+              </button>
             </div>
 
             <div className="overflow-x-auto">
@@ -463,7 +467,7 @@ export const SettingsView: React.FC = () => {
                     <th className="p-3">Manager / Partner Name</th>
                     <th className="p-3">Role</th>
                     <th className="p-3">Login Username</th>
-                    <th className="p-3">Password</th>
+                    <th className="p-3">Cloud Auth Password</th>
                     <th className="p-3">Account Access</th>
                     <th className="p-3 text-right">Actions</th>
                   </tr>
@@ -510,7 +514,7 @@ export const SettingsView: React.FC = () => {
                             </div>
                           ) : (
                             <div className="flex items-center space-x-2">
-                              <span className="text-slate-300">{user.password}</span>
+                              <span className="text-slate-400 text-[11px]">••••••••</span>
                               <button
                                 onClick={() => {
                                   setPasswordResetMgmtId(user.id);
@@ -518,7 +522,7 @@ export const SettingsView: React.FC = () => {
                                 }}
                                 className="text-[10px] text-cyan-400 hover:underline flex items-center gap-0.5"
                               >
-                                <Key className="w-3 h-3" /> Reset
+                                <Key className="w-3 h-3" /> Set Password
                               </button>
                             </div>
                           )}
@@ -778,7 +782,7 @@ export const SettingsView: React.FC = () => {
                             </div>
                           ) : (
                             <div className="flex items-center space-x-2">
-                              <span className="text-slate-300">{inf.password || 'password123'}</span>
+                              <span className="text-slate-400 text-[11px]">••••••••</span>
                               <button
                                 onClick={() => {
                                   setPasswordResetInfId(inf.id);
