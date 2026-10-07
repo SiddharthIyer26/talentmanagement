@@ -45,12 +45,19 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
   if (!campaign) return null;
 
   const influencer = db.getInfluencerById(campaign.influencerId);
+  const talent = db.getTalentInfoForCampaign(campaign);
+  const isNonExclusive = campaign.talentType === 'non_exclusive';
   const brand = db.getBrandById(campaign.brandId);
   const isAdmin = authService.isAdmin();
   const isInfluencer = authService.isInfluencer();
   const activeInfluencer = authService.getActiveInfluencer();
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  // Non-exclusive talent state
+  const [nonExName, setNonExName] = useState(campaign.nonExclusiveTalent?.name || '');
+  const [nonExHandle, setNonExHandle] = useState(campaign.nonExclusiveTalent?.handle || '');
+  const [nonExContact, setNonExContact] = useState(campaign.nonExclusiveTalent?.email || campaign.nonExclusiveTalent?.phone || '');
 
   // Security Check: Influencer can ONLY access & edit their OWN collaborations
   if (isInfluencer && activeInfluencer && campaign.influencerId !== activeInfluencer.id) {
@@ -261,7 +268,13 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
       notes,
       internalNotes,
       deliverables,
-      metrics: editMetrics
+      metrics: editMetrics,
+      talentType: campaign.talentType || 'exclusive',
+      nonExclusiveTalent: isNonExclusive ? {
+        name: nonExName.trim() || talent.name,
+        handle: nonExHandle.trim() || talent.handle,
+        email: nonExContact.trim() || undefined
+      } : undefined
     };
 
     db.saveCampaign(patch);
@@ -297,9 +310,18 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
               <Building2 className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-100">{campaignName || campaign.campaignName}</h2>
-              <p className="text-slate-400 text-[11px] flex items-center gap-2">
-                <span>Influencer: <strong className="text-cyan-400">{influencer?.name}</strong></span>
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] ${
+                  isNonExclusive
+                    ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                    : 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30'
+                }`}>
+                  {isNonExclusive ? 'Non-Exclusive Talent' : 'Exclusive Talent'}
+                </span>
+                <h2 className="text-base font-bold text-slate-100">{campaignName || campaign.campaignName}</h2>
+              </div>
+              <p className="text-slate-400 text-[11px] flex items-center gap-2 mt-0.5">
+                <span>Creator: <strong className={isNonExclusive ? 'text-amber-400' : 'text-cyan-400'}>{isNonExclusive ? (nonExName || talent.name) : talent.name}</strong></span>
                 <span>•</span>
                 <span>Brand: <strong className="text-indigo-400">{brandName}</strong></span>
               </p>
@@ -424,6 +446,71 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Column 1: General Info, Deliverables, Tracking Link */}
             <div className="space-y-5">
+              {/* Non-Exclusive Talent Details Block */}
+              {isNonExclusive && (
+                <div className="bg-[#0b0f17] border border-amber-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-amber-400" /> Non-Exclusive Talent Information
+                    </h3>
+                    <span className="text-[10px] text-amber-400/80 font-mono">Not in Exclusive Roster</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Influencer Name</label>
+                      {isAdmin ? (
+                        <input
+                          type="text"
+                          value={nonExName}
+                          onChange={e => setNonExName(e.target.value)}
+                          placeholder="Influencer Name"
+                          className="w-full bg-tech-card border border-tech-border text-slate-200 rounded p-2 focus:border-amber-400 focus:outline-none"
+                        />
+                      ) : (
+                        <div className="w-full bg-tech-card border border-tech-border text-slate-200 rounded p-2 min-h-[36px] flex items-center font-bold">
+                          {nonExName || 'N/A'}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 mb-1">Instagram / Social Handle</label>
+                      {isAdmin ? (
+                        <input
+                          type="text"
+                          value={nonExHandle}
+                          onChange={e => setNonExHandle(e.target.value)}
+                          placeholder="@handle"
+                          className="w-full bg-tech-card border border-tech-border text-slate-200 rounded p-2 focus:border-amber-400 focus:outline-none"
+                        />
+                      ) : (
+                        <div className="w-full bg-tech-card border border-tech-border text-slate-200 rounded p-2 min-h-[36px] flex items-center font-bold">
+                          {nonExHandle || 'N/A'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">Email / Contact Info</label>
+                    {isAdmin ? (
+                      <input
+                        type="text"
+                        value={nonExContact}
+                        onChange={e => setNonExContact(e.target.value)}
+                        placeholder="Email or phone"
+                        className="w-full bg-tech-card border border-tech-border text-slate-200 rounded p-2 focus:border-amber-400 focus:outline-none"
+                      />
+                    ) : (
+                      <div className="w-full bg-tech-card border border-tech-border text-slate-200 rounded p-2 min-h-[36px] flex items-center">
+                        {nonExContact || 'N/A'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* General Info */}
               <div className="bg-[#0b0f17] border border-tech-border rounded-xl p-4 space-y-3">
                 <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">

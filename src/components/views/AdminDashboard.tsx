@@ -61,7 +61,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <TrendingUp className="w-4 h-4 text-cyan-400" /> Independent Talent Management Financials (INR ₹)
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7 gap-3 sm:gap-4">
           {/* 1. Total Influencer Revenue */}
           <div className="bg-tech-card border border-tech-border rounded-xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
@@ -78,23 +78,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* 2. My Commission Revenue */}
-          <div className="bg-tech-card border border-emerald-500/40 rounded-xl p-4 flex flex-col justify-between bg-emerald-950/10">
+          {/* 2. Total Commission */}
+          <div className="bg-tech-card border border-emerald-500/40 rounded-xl p-4 flex flex-col justify-between bg-emerald-950/15">
             <div className="flex items-center justify-between text-emerald-400 text-xs mb-1 font-semibold">
-              <span>My Commission Revenue</span>
+              <span>Total Commission</span>
               <IndianRupee className="w-4 h-4 text-emerald-400" />
             </div>
             <div>
               <span className="text-xl sm:text-2xl font-extrabold text-emerald-400 font-mono">
-                ₹{metrics.myCommissionRevenue.toLocaleString('en-IN')}
+                ₹{metrics.totalCommission.toLocaleString('en-IN')}
               </span>
             </div>
             <div className="mt-2 text-[10px] text-emerald-400 flex items-center justify-between border-t border-emerald-500/20 pt-1.5 font-mono">
-              <span>₹{metrics.myReceivedCommission.toLocaleString('en-IN')} received</span>
+              <span>₹{metrics.totalReceivedCommission.toLocaleString('en-IN')} received</span>
             </div>
           </div>
 
-          {/* 3. Total Received */}
+          {/* 3. Exclusive Talent Commissions */}
+          <div className="bg-tech-card border border-cyan-500/30 rounded-xl p-4 flex flex-col justify-between bg-cyan-950/10">
+            <div className="flex items-center justify-between text-cyan-300 text-xs mb-1 font-semibold">
+              <span>Exclusive Talent Commissions</span>
+              <IndianRupee className="w-4 h-4 text-cyan-400" />
+            </div>
+            <div>
+              <span className="text-xl sm:text-2xl font-extrabold text-cyan-300 font-mono">
+                ₹{metrics.exclusiveCommission.toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="mt-2 text-[10px] text-cyan-400 flex items-center justify-between border-t border-cyan-500/20 pt-1.5 font-mono">
+              <span>₹{metrics.exclusiveReceivedCommission.toLocaleString('en-IN')} received</span>
+            </div>
+          </div>
+
+          {/* 4. Non-Exclusive Talent Commissions */}
+          <div className="bg-tech-card border border-amber-500/30 rounded-xl p-4 flex flex-col justify-between bg-amber-950/10">
+            <div className="flex items-center justify-between text-amber-300 text-xs mb-1 font-semibold">
+              <span>Non-Exclusive Talent Commissions</span>
+              <IndianRupee className="w-4 h-4 text-amber-400" />
+            </div>
+            <div>
+              <span className="text-xl sm:text-2xl font-extrabold text-amber-300 font-mono">
+                ₹{metrics.nonExclusiveCommission.toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="mt-2 text-[10px] text-amber-400 flex items-center justify-between border-t border-amber-500/20 pt-1.5 font-mono">
+              <span>₹{metrics.nonExclusiveReceivedCommission.toLocaleString('en-IN')} received</span>
+            </div>
+          </div>
+
+          {/* 5. Total Received */}
           <div className="bg-tech-card border border-tech-border rounded-xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
               <span>Total Received</span>
@@ -110,7 +142,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* 4. Total Receivables */}
+          {/* 6. Total Receivables */}
           <div className="bg-tech-card border border-tech-border rounded-xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
               <span>Total Receivables</span>
@@ -126,7 +158,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* 5. TDS Deducted */}
+          {/* 7. TDS Deducted */}
           <div className="bg-tech-card border border-tech-border rounded-xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
               <span>TDS Deducted</span>

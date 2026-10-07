@@ -155,8 +155,19 @@ export interface CampaignActivity {
   action: string;
 }
 
+export type TalentType = 'exclusive' | 'non_exclusive';
+
+export interface NonExclusiveTalentInfo {
+  name: string;
+  handle: string;
+  email?: string;
+  phone?: string;
+}
+
 export interface Campaign {
   id: string;
+  talentType?: TalentType;
+  nonExclusiveTalent?: NonExclusiveTalentInfo;
   influencerId: string;
   brandId: string;
   brandName: string;

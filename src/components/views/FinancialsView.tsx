@@ -21,11 +21,18 @@ export const FinancialsView: React.FC = () => {
 
   // Filters
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [selectedTalentType, setSelectedTalentType] = useState<'ALL' | 'exclusive' | 'non_exclusive'>('ALL');
   const [selectedInfluencer, setSelectedInfluencer] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Filter campaigns
   const filteredCampaigns = campaigns.filter(c => {
+    // Talent Type Filter
+    if (selectedTalentType !== 'ALL') {
+      const cType = c.talentType || 'exclusive';
+      if (cType !== selectedTalentType) return false;
+    }
+
     // Influencer Filter
     if (selectedInfluencer !== 'ALL' && c.influencerId !== selectedInfluencer) {
       return false;
@@ -43,10 +50,14 @@ export const FinancialsView: React.FC = () => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const infName = (db.getInfluencerById(c.influencerId)?.name || '').toLowerCase();
+      const nonExName = (c.nonExclusiveTalent?.name || '').toLowerCase();
+      const nonExHandle = (c.nonExclusiveTalent?.handle || '').toLowerCase();
       const match =
         c.campaignName.toLowerCase().includes(q) ||
         c.brandName.toLowerCase().includes(q) ||
-        infName.includes(q);
+        infName.includes(q) ||
+        nonExName.includes(q) ||
+        nonExHandle.includes(q);
       if (!match) return false;
     }
 
@@ -54,7 +65,17 @@ export const FinancialsView: React.FC = () => {
   });
 
   // Calculate totals based on filtered campaigns
-  const totalCommissionEarned = filteredCampaigns.reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+  const exclusiveCommission = filteredCampaigns
+    .filter(c => (c.talentType || 'exclusive') === 'exclusive')
+    .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+
+  const nonExclusiveCommission = filteredCampaigns
+    .filter(c => c.talentType === 'non_exclusive')
+    .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+
+  // Total Commission strictly reconciles: Total = Exclusive + Non-Exclusive
+  const totalCommissionEarned = exclusiveCommission + nonExclusiveCommission;
+
   const recognizedCommission = filteredCampaigns
     .filter(c => c.paymentStatus === 'Received' || c.paymentStatus === 'Paid')
     .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
@@ -69,6 +90,7 @@ export const FinancialsView: React.FC = () => {
   // Month-wise aggregation
   const monthWiseData = availableMonths.map(month => {
     const monthCamps = campaigns.filter(c => {
+      if (selectedTalentType !== 'ALL' && (c.talentType || 'exclusive') !== selectedTalentType) return false;
       if (selectedInfluencer !== 'ALL' && c.influencerId !== selectedInfluencer) return false;
       return db.getCampaignMonthLabel(c).trim().toLowerCase() === month.trim().toLowerCase();
     });
@@ -97,51 +119,84 @@ export const FinancialsView: React.FC = () => {
             <IndianRupee className="w-5 h-5 text-emerald-400" /> Revenue
           </h2>
           <p className="text-slate-400">
-            Independent business ledger tracking <strong className="text-slate-200">my personal commission revenue</strong> earned from creator collaborations.
+            Independent business ledger tracking <strong className="text-slate-200">my personal commission revenue</strong> classified by Exclusive & Non-Exclusive talent.
           </p>
         </div>
       </div>
 
-      {/* KPI Cards: Total Commission, Recognized, Pending */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-tech-card border border-emerald-500/40 rounded-xl p-5 bg-emerald-950/10">
+      {/* Reconciled KPI Cards: Total, Exclusive, Non-Exclusive, Recognized, Pending */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Total Commission */}
+        <div className="bg-tech-card border border-emerald-500/40 rounded-xl p-5 bg-emerald-950/15">
           <div className="flex items-center justify-between text-emerald-400 font-semibold mb-1">
-            <span>Total Commission Revenue</span>
+            <span>Total Commission</span>
             <IndianRupee className="w-4 h-4 text-emerald-400" />
           </div>
           <span className="text-2xl sm:text-3xl font-extrabold text-emerald-400 font-mono">
             ₹{totalCommissionEarned.toLocaleString('en-IN')}
           </span>
           <div className="mt-2 text-[10px] text-slate-400 border-t border-tech-border pt-1.5 flex justify-between">
-            <span>Across {filteredCampaigns.length} collaborations</span>
+            <span>Across {filteredCampaigns.length} deals</span>
             <span className="text-emerald-400">Commercial: ₹{totalLockedCommercial.toLocaleString('en-IN')}</span>
           </div>
         </div>
 
-        <div className="bg-tech-card border border-cyan-500/30 rounded-xl p-5">
-          <div className="flex items-center justify-between text-cyan-400 font-semibold mb-1">
-            <span>Recognized Commission (Received)</span>
-            <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+        {/* Exclusive Talent Commissions */}
+        <div className="bg-tech-card border border-cyan-500/30 rounded-xl p-5 bg-cyan-950/10">
+          <div className="flex items-center justify-between text-cyan-300 font-semibold mb-1">
+            <span>Exclusive Talent Comm.</span>
+            <IndianRupee className="w-4 h-4 text-cyan-400" />
           </div>
           <span className="text-2xl sm:text-3xl font-extrabold text-cyan-300 font-mono">
-            ₹{recognizedCommission.toLocaleString('en-IN')}
+            ₹{exclusiveCommission.toLocaleString('en-IN')}
           </span>
-          <div className="mt-2 text-[10px] text-slate-400 border-t border-tech-border pt-1.5 flex justify-between">
-            <span>Automatically accounted</span>
-            <span className="text-cyan-400">Brands Paid: ₹{totalReceivedCommercial.toLocaleString('en-IN')}</span>
+          <div className="mt-2 text-[10px] text-cyan-400/80 border-t border-tech-border pt-1.5 flex justify-between">
+            <span>Exclusive Roster</span>
+            <span>{filteredCampaigns.filter(c => (c.talentType || 'exclusive') === 'exclusive').length} deals</span>
           </div>
         </div>
 
-        <div className="bg-tech-card border border-amber-500/30 rounded-xl p-5">
-          <div className="flex items-center justify-between text-amber-400 font-semibold mb-1">
-            <span>Pending Commission (Receivable)</span>
+        {/* Non-Exclusive Talent Commissions */}
+        <div className="bg-tech-card border border-amber-500/30 rounded-xl p-5 bg-amber-950/10">
+          <div className="flex items-center justify-between text-amber-300 font-semibold mb-1">
+            <span>Non-Exclusive Comm.</span>
+            <IndianRupee className="w-4 h-4 text-amber-400" />
+          </div>
+          <span className="text-2xl sm:text-3xl font-extrabold text-amber-300 font-mono">
+            ₹{nonExclusiveCommission.toLocaleString('en-IN')}
+          </span>
+          <div className="mt-2 text-[10px] text-amber-400/80 border-t border-tech-border pt-1.5 flex justify-between">
+            <span>Non-Exclusive Deals</span>
+            <span>{filteredCampaigns.filter(c => c.talentType === 'non_exclusive').length} deals</span>
+          </div>
+        </div>
+
+        {/* Recognized Commission */}
+        <div className="bg-tech-card border border-cyan-500/20 rounded-xl p-5">
+          <div className="flex items-center justify-between text-slate-300 font-semibold mb-1">
+            <span>Recognized Comm. (Paid)</span>
+            <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+          </div>
+          <span className="text-2xl sm:text-3xl font-extrabold text-slate-100 font-mono">
+            ₹{recognizedCommission.toLocaleString('en-IN')}
+          </span>
+          <div className="mt-2 text-[10px] text-slate-400 border-t border-tech-border pt-1.5 flex justify-between">
+            <span>Received in Bank</span>
+            <span className="text-cyan-400">Paid: ₹{totalReceivedCommercial.toLocaleString('en-IN')}</span>
+          </div>
+        </div>
+
+        {/* Pending Commission */}
+        <div className="bg-tech-card border border-amber-500/20 rounded-xl p-5">
+          <div className="flex items-center justify-between text-slate-300 font-semibold mb-1">
+            <span>Pending Comm. (Due)</span>
             <Clock className="w-4 h-4 text-amber-400" />
           </div>
-          <span className="text-2xl sm:text-3xl font-extrabold text-amber-400 font-mono">
+          <span className="text-2xl sm:text-3xl font-extrabold text-slate-100 font-mono">
             ₹{pendingCommission.toLocaleString('en-IN')}
           </span>
           <div className="mt-2 text-[10px] text-slate-400 border-t border-tech-border pt-1.5 flex justify-between">
-            <span>Awaiting client clearance</span>
+            <span>Awaiting Payment</span>
             <span className="text-amber-400">TDS: ₹{totalTdsDeducted.toLocaleString('en-IN')}</span>
           </div>
         </div>
@@ -188,6 +243,21 @@ export const FinancialsView: React.FC = () => {
       {/* Combined Filter Controls */}
       <div className="bg-tech-card border border-tech-border rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          {/* Talent Type Filter */}
+          <div className="flex items-center space-x-1.5 bg-[#0b0f17] border border-tech-border px-3 py-1.5 rounded-lg">
+            <Filter className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-slate-400 text-[11px]">Talent:</span>
+            <select
+              value={selectedTalentType}
+              onChange={e => setSelectedTalentType(e.target.value as any)}
+              className="bg-transparent text-slate-200 font-semibold focus:outline-none cursor-pointer text-xs"
+            >
+              <option value="ALL" className="bg-[#0e1420] text-slate-200">All Talents</option>
+              <option value="exclusive" className="bg-[#0e1420] text-cyan-300">Exclusive Talents</option>
+              <option value="non_exclusive" className="bg-[#0e1420] text-amber-300">Non-Exclusive Talents</option>
+            </select>
+          </div>
+
           {/* Month Filter */}
           <div className="flex items-center space-x-1.5 bg-[#0b0f17] border border-tech-border px-3 py-1.5 rounded-lg">
             <Calendar className="w-3.5 h-3.5 text-cyan-400" />
@@ -224,10 +294,11 @@ export const FinancialsView: React.FC = () => {
             </select>
           </div>
 
-          {(selectedMonth !== 'ALL' || selectedInfluencer !== 'ALL' || searchQuery) && (
+          {(selectedMonth !== 'ALL' || selectedTalentType !== 'ALL' || selectedInfluencer !== 'ALL' || searchQuery) && (
             <button
               onClick={() => {
                 setSelectedMonth('ALL');
+                setSelectedTalentType('ALL');
                 setSelectedInfluencer('ALL');
                 setSearchQuery('');
               }}
@@ -273,6 +344,7 @@ export const FinancialsView: React.FC = () => {
               <tr className="border-b border-tech-border text-slate-400 bg-[#0b0f17]/50 text-[11px]">
                 <th className="py-2.5 px-3">Date</th>
                 <th className="py-2.5 px-3">Influencer</th>
+                <th className="py-2.5 px-3 text-center">Talent Type</th>
                 <th className="py-2.5 px-3">Brand</th>
                 <th className="py-2.5 px-3">Collaboration</th>
                 <th className="py-2.5 px-3 text-right">Locked Commercial</th>
@@ -286,13 +358,13 @@ export const FinancialsView: React.FC = () => {
             <tbody className="divide-y divide-tech-border text-xs font-sans">
               {filteredCampaigns.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-slate-500">
-                    No collaboration records match the selected month and influencer filter.
+                  <td colSpan={11} className="py-8 text-center text-slate-500">
+                    No collaboration records match the selected filters.
                   </td>
                 </tr>
               ) : (
                 filteredCampaigns.map(c => {
-                  const inf = db.getInfluencerById(c.influencerId);
+                  const talent = db.getTalentInfoForCampaign(c);
                   const isReceived = c.paymentStatus === 'Received' || c.paymentStatus === 'Paid';
                   const dateDisplay = c.paymentReceivedDate || c.dealLockedDate || '-';
 
@@ -302,8 +374,19 @@ export const FinancialsView: React.FC = () => {
                         {dateDisplay}
                       </td>
                       <td className="py-3 px-3">
-                        <span className="font-bold text-slate-200 block">{inf?.name || 'Creator'}</span>
-                        <span className="text-[10px] text-cyan-400 font-mono">{inf?.handle}</span>
+                        <span className="font-bold text-slate-200 block">{talent.name}</span>
+                        <span className="text-[10px] text-cyan-400 font-mono">{talent.handle}</span>
+                      </td>
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        {talent.isExclusive ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                            Exclusive
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                            Non-Exclusive
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-3 font-semibold text-slate-300">
                         {c.brandName}
@@ -347,7 +430,7 @@ export const FinancialsView: React.FC = () => {
             {filteredCampaigns.length > 0 && (
               <tfoot>
                 <tr className="bg-[#0b0f17] border-t-2 border-tech-border font-bold text-slate-200">
-                  <td colSpan={4} className="py-3 px-3 text-right uppercase text-[10px] text-slate-400">
+                  <td colSpan={5} className="py-3 px-3 text-right uppercase text-[10px] text-slate-400">
                     Filtered Totals:
                   </td>
                   <td className="py-3 px-3 text-right font-mono text-slate-100 whitespace-nowrap">
@@ -373,3 +456,4 @@ export const FinancialsView: React.FC = () => {
     </div>
   );
 };
+

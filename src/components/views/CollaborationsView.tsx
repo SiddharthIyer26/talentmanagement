@@ -20,6 +20,7 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
   // Filter states
   const availableMonths = db.getAvailableMonths();
   const [filterMonth, setFilterMonth] = useState<string>('ALL');
+  const [filterTalentType, setFilterTalentType] = useState<'ALL' | 'exclusive' | 'non_exclusive'>('ALL');
   const [filterInfluencer, setFilterInfluencer] = useState('ALL');
   const [filterBrand, setFilterBrand] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -28,6 +29,7 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
 
   const resetFilters = () => {
     setFilterMonth('ALL');
+    setFilterTalentType('ALL');
     setFilterInfluencer('ALL');
     setFilterBrand('ALL');
     setFilterStatus('ALL');
@@ -41,6 +43,12 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
   const filteredCampaigns = campaigns.filter(c => {
     if (!isAdmin && activeInfluencer && c.influencerId !== activeInfluencer.id) return false;
     
+    // Talent Type Filter
+    if (filterTalentType !== 'ALL') {
+      const cTalentType = c.talentType || 'exclusive';
+      if (cTalentType !== filterTalentType) return false;
+    }
+
     // Month Filter
     if (filterMonth !== 'ALL') {
       const cMonth = db.getCampaignMonthLabel(c);
@@ -59,9 +67,13 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
+      const inf = db.getInfluencerById(c.influencerId);
       const match =
         c.campaignName.toLowerCase().includes(q) ||
         c.brandName.toLowerCase().includes(q) ||
+        (inf && inf.name.toLowerCase().includes(q)) ||
+        (c.nonExclusiveTalent?.name && c.nonExclusiveTalent.name.toLowerCase().includes(q)) ||
+        (c.nonExclusiveTalent?.handle && c.nonExclusiveTalent.handle.toLowerCase().includes(q)) ||
         c.notes?.toLowerCase().includes(q);
       if (!match) return false;
     }
@@ -106,7 +118,7 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-3 text-xs">
           {/* Text Search */}
           <div className="relative col-span-1 sm:col-span-2 md:col-span-1">
             <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-3" />
@@ -118,6 +130,17 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
               className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded-lg pl-8 p-2 focus:border-cyan-400 focus:outline-none"
             />
           </div>
+
+          {/* Talent Type Filter */}
+          <select
+            value={filterTalentType}
+            onChange={e => setFilterTalentType(e.target.value as any)}
+            className="bg-[#0b0f17] border border-tech-border text-slate-200 rounded-lg p-2 focus:border-cyan-400 focus:outline-none"
+          >
+            <option value="ALL">All Talent Types</option>
+            <option value="exclusive">Exclusive Talents</option>
+            <option value="non_exclusive">Non-Exclusive Talents</option>
+          </select>
 
           {/* Month Filter */}
           <select
@@ -210,8 +233,9 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
         ) : (
           <div className="divide-y divide-tech-border text-xs">
             {filteredCampaigns.map(c => {
-              const inf = db.getInfluencerById(c.influencerId);
+              const talent = db.getTalentInfoForCampaign(c);
               const urgency = db.getPaymentUrgency(c);
+              const isNonExclusive = c.talentType === 'non_exclusive';
 
               return (
                 <div
@@ -220,16 +244,24 @@ export const CollaborationsView: React.FC<CollaborationsViewProps> = ({
                   className="p-4 hover:bg-slate-800/40 cursor-pointer transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
                 >
                   <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                         {c.brandName}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] ${
+                        isNonExclusive
+                          ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                          : 'bg-indigo-500/10 text-indigo-300 border border-indigo-500/30'
+                      }`}>
+                        {isNonExclusive ? 'Non-Exclusive Talent' : 'Exclusive Talent'}
                       </span>
                       <h3 className="font-bold text-slate-100 text-xs truncate">{c.campaignName}</h3>
                     </div>
 
                     <div className="flex items-center space-x-3 text-[11px] text-slate-400">
                       <span>
-                        Creator: <strong className="text-slate-300">{inf?.name}</strong>
+                        Creator: <strong className="text-slate-200">{talent.name}</strong>{' '}
+                        <span className="text-[10px] font-mono text-cyan-400">{talent.handle}</span>
                       </span>
                       <span>•</span>
                       <span>

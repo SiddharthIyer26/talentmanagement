@@ -33,10 +33,15 @@ export const AnalyticsView: React.FC = () => {
 
   // Filters
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [selectedTalentType, setSelectedTalentType] = useState<'ALL' | 'exclusive' | 'non_exclusive'>('ALL');
   const [selectedInfluencer, setSelectedInfluencer] = useState<string>('ALL');
 
   // Filtered campaigns
   const filteredCampaigns = allCampaigns.filter(c => {
+    if (selectedTalentType !== 'ALL') {
+      const cType = c.talentType || 'exclusive';
+      if (cType !== selectedTalentType) return false;
+    }
     if (selectedMonth !== 'ALL') {
       const cMonth = db.getCampaignMonthLabel(c);
       if (cMonth.trim().toLowerCase() !== selectedMonth.trim().toLowerCase()) return false;
@@ -47,7 +52,18 @@ export const AnalyticsView: React.FC = () => {
 
   // KPI calculations
   const totalCommercialVolume = filteredCampaigns.reduce((acc, c) => acc + (c.lockedCommercial || c.dealAmount || 0), 0);
-  const totalCommissionRevenue = filteredCampaigns.reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+  
+  // Classification: Total = Exclusive + Non-Exclusive
+  const exclusiveCommissionRevenue = filteredCampaigns
+    .filter(c => (c.talentType || 'exclusive') === 'exclusive')
+    .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+
+  const nonExclusiveCommissionRevenue = filteredCampaigns
+    .filter(c => c.talentType === 'non_exclusive')
+    .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+
+  const totalCommissionRevenue = exclusiveCommissionRevenue + nonExclusiveCommissionRevenue;
+
   const receivedCommercial = filteredCampaigns
     .filter(c => c.paymentStatus === 'Received' || c.paymentStatus === 'Paid')
     .reduce((acc, c) => acc + (c.receivedCommercial || c.amountReceived || c.lockedCommercial || c.dealAmount || 0), 0);
@@ -62,11 +78,19 @@ export const AnalyticsView: React.FC = () => {
   // 1. Monthly Commission Revenue Chart Data
   const monthlyRevenueData = dynamicMonths.map(month => {
     const monthCamps = allCampaigns.filter(c => {
+      if (selectedTalentType !== 'ALL' && (c.talentType || 'exclusive') !== selectedTalentType) return false;
       if (selectedInfluencer !== 'ALL' && c.influencerId !== selectedInfluencer) return false;
       return db.getCampaignMonthLabel(c).trim().toLowerCase() === month.trim().toLowerCase();
     });
 
-    const comm = monthCamps.reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+    const exclComm = monthCamps
+      .filter(c => (c.talentType || 'exclusive') === 'exclusive')
+      .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+    const nonExclComm = monthCamps
+      .filter(c => c.talentType === 'non_exclusive')
+      .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+    const totalComm = exclComm + nonExclComm;
+
     const commRec = monthCamps
       .filter(c => c.paymentStatus === 'Received' || c.paymentStatus === 'Paid')
       .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
@@ -75,7 +99,9 @@ export const AnalyticsView: React.FC = () => {
     return {
       month: month.replace(' 2026', ''),
       fullMonth: month,
-      'My Commission': comm,
+      'Total Commission': totalComm,
+      'Exclusive Commission': exclComm,
+      'Non-Exclusive Commission': nonExclComm,
       'Recognized Comm': commRec,
       'Commercial Deal Volume': dealVol
     };
@@ -85,18 +111,32 @@ export const AnalyticsView: React.FC = () => {
   const revByInfData = influencers
     .filter(inf => selectedInfluencer === 'ALL' || inf.id === selectedInfluencer)
     .map(inf => {
-      const infCamps = filteredCampaigns.filter(c => c.influencerId === inf.id);
+      const infCamps = filteredCampaigns.filter(c => (c.talentType || 'exclusive') === 'exclusive' && c.influencerId === inf.id);
       const commission = infCamps.reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
       const commercial = infCamps.reduce((acc, c) => acc + (c.lockedCommercial || c.dealAmount || 0), 0);
       return {
         name: inf.name.split(' ')[0],
-        fullName: inf.name,
+        fullName: `${inf.name} (Exclusive)`,
         'Commission Revenue': commission,
         'Commercial Volume': commercial,
         dealsCount: infCamps.length
       };
     })
     .filter(d => d['Commercial Volume'] > 0 || selectedInfluencer !== 'ALL');
+
+  // Add non-exclusive summary row if any exist and filter allows
+  const nonExDeals = filteredCampaigns.filter(c => c.talentType === 'non_exclusive');
+  if (nonExDeals.length > 0 && (selectedInfluencer === 'ALL')) {
+    const nonExCommission = nonExDeals.reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+    const nonExCommercial = nonExDeals.reduce((acc, c) => acc + (c.lockedCommercial || c.dealAmount || 0), 0);
+    revByInfData.push({
+      name: 'Non-Exclusive',
+      fullName: 'Non-Exclusive Talents',
+      'Commission Revenue': nonExCommission,
+      'Commercial Volume': nonExCommercial,
+      dealsCount: nonExDeals.length
+    });
+  }
 
   // 3. Revenue by Brand Data
   const brandMap: { [key: string]: { commercial: number; commission: number } } = {};
@@ -125,19 +165,33 @@ export const AnalyticsView: React.FC = () => {
             <BarChart3 className="w-5 h-5 text-emerald-400" /> Revenue Analytics
           </h2>
           <p className="text-slate-400 mt-0.5">
-            Financial analytics for my independent business • Commission revenue, brand deal volumes, receivables & TDS breakdown.
+            Financial analytics for my independent business • Commission revenue classified by Exclusive & Non-Exclusive talent.
           </p>
         </div>
 
         {/* Quick Filter Bar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Talent Type Selector */}
+          <div className="flex items-center space-x-1.5 bg-[#0b0f17] border border-tech-border px-3 py-1.5 rounded-xl">
+            <span className="text-[10px] text-slate-400 uppercase font-mono">Talent:</span>
+            <select
+              value={selectedTalentType}
+              onChange={e => setSelectedTalentType(e.target.value as any)}
+              className="bg-transparent text-amber-300 font-bold focus:outline-none cursor-pointer text-xs"
+            >
+              <option value="ALL" className="bg-[#0b0f17] text-slate-200">All Talents</option>
+              <option value="exclusive" className="bg-[#0b0f17] text-slate-200">Exclusive Talents</option>
+              <option value="non_exclusive" className="bg-[#0b0f17] text-slate-200">Non-Exclusive Talents</option>
+            </select>
+          </div>
+
           {/* Month Selector */}
           <div className="flex items-center space-x-1.5 bg-[#0b0f17] border border-tech-border px-3 py-1.5 rounded-xl">
             <Calendar className="w-3.5 h-3.5 text-cyan-400" />
             <select
               value={selectedMonth}
               onChange={e => setSelectedMonth(e.target.value)}
-              className="bg-transparent text-cyan-300 font-bold focus:outline-none cursor-pointer"
+              className="bg-transparent text-cyan-300 font-bold focus:outline-none cursor-pointer text-xs"
             >
               <option value="ALL" className="bg-[#0b0f17] text-slate-200">All Months</option>
               {dynamicMonths.map(m => (
@@ -154,9 +208,9 @@ export const AnalyticsView: React.FC = () => {
             <select
               value={selectedInfluencer}
               onChange={e => setSelectedInfluencer(e.target.value)}
-              className="bg-transparent text-indigo-300 font-bold focus:outline-none cursor-pointer"
+              className="bg-transparent text-indigo-300 font-bold focus:outline-none cursor-pointer text-xs"
             >
-              <option value="ALL" className="bg-[#0b0f17] text-slate-200">All Influencers</option>
+              <option value="ALL" className="bg-[#0b0f17] text-slate-200">All Exclusive Roster</option>
               {influencers.map(inf => (
                 <option key={inf.id} value={inf.id} className="bg-[#0b0f17] text-slate-200">
                   {inf.name}
@@ -167,12 +221,12 @@ export const AnalyticsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 6 Key Financial KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
-        {/* Total Commission Revenue */}
-        <div className="bg-tech-card border border-emerald-500/40 rounded-xl p-4 flex flex-col justify-between bg-emerald-950/10">
+      {/* Reconciled Financial KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-3 sm:gap-4">
+        {/* Total Commission */}
+        <div className="bg-tech-card border border-emerald-500/40 rounded-xl p-4 flex flex-col justify-between bg-emerald-950/15">
           <div className="flex items-center justify-between text-emerald-400 font-semibold mb-1">
-            <span>My Commission</span>
+            <span>Total Commission</span>
             <IndianRupee className="w-4 h-4 text-emerald-400" />
           </div>
           <span className="text-xl sm:text-2xl font-black text-emerald-400 font-mono">
@@ -183,10 +237,38 @@ export const AnalyticsView: React.FC = () => {
           </span>
         </div>
 
+        {/* Exclusive Talent Commissions */}
+        <div className="bg-tech-card border border-cyan-500/30 rounded-xl p-4 flex flex-col justify-between bg-cyan-950/10">
+          <div className="flex items-center justify-between text-cyan-300 font-semibold mb-1">
+            <span>Exclusive Talent Comm.</span>
+            <IndianRupee className="w-4 h-4 text-cyan-400" />
+          </div>
+          <span className="text-xl sm:text-2xl font-black text-cyan-300 font-mono">
+            ₹{exclusiveCommissionRevenue.toLocaleString('en-IN')}
+          </span>
+          <span className="text-[10px] text-cyan-400/80 block mt-1">
+            From Exclusive Roster
+          </span>
+        </div>
+
+        {/* Non-Exclusive Talent Commissions */}
+        <div className="bg-tech-card border border-amber-500/30 rounded-xl p-4 flex flex-col justify-between bg-amber-950/10">
+          <div className="flex items-center justify-between text-amber-300 font-semibold mb-1">
+            <span>Non-Exclusive Comm.</span>
+            <IndianRupee className="w-4 h-4 text-amber-400" />
+          </div>
+          <span className="text-xl sm:text-2xl font-black text-amber-300 font-mono">
+            ₹{nonExclusiveCommissionRevenue.toLocaleString('en-IN')}
+          </span>
+          <span className="text-[10px] text-amber-400/80 block mt-1">
+            From Non-Exclusive deals
+          </span>
+        </div>
+
         {/* Total Commercial Volume */}
         <div className="bg-tech-card border border-tech-border rounded-xl p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-            <span>Influencer Revenue</span>
+            <span>Deal Volume</span>
             <TrendingUp className="w-4 h-4 text-cyan-400" />
           </div>
           <span className="text-xl sm:text-2xl font-black text-slate-100 font-mono">
@@ -276,12 +358,13 @@ export const AnalyticsView: React.FC = () => {
                   tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`}
                 />
                 <Tooltip
-                  formatter={(value: any) => [`₹${Number(value).toLocaleString('en-IN')}`, '']}
+                  formatter={(value: any, name: any) => [`₹${Number(value).toLocaleString('en-IN')}`, name]}
                   contentStyle={{ backgroundColor: '#0e1420', borderColor: '#334155', borderRadius: '0.75rem', fontSize: '11px' }}
                 />
                 <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                <Bar dataKey="My Commission" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Recognized Comm" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Exclusive Commission" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Non-Exclusive Commission" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Total Commission" fill="#10b981" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

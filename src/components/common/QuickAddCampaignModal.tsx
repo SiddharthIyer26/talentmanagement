@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { db } from '../../services/db';
 import { authService } from '../../services/authService';
-import { ProductionStatus } from '../../types';
-import { Plus, X, Sparkles, Calendar, IndianRupee, Briefcase, Percent } from 'lucide-react';
+import { ProductionStatus, TalentType } from '../../types';
+import { Plus, X, Sparkles, Calendar, IndianRupee, Briefcase, Percent, UserCheck, UserPlus, Info } from 'lucide-react';
 
 interface QuickAddCampaignModalProps {
   isOpen: boolean;
@@ -19,7 +19,15 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
   const brands = db.getBrands();
   const activeInfluencer = authService.getActiveInfluencer();
 
+  // Talent Type: Exclusive vs Non-Exclusive
+  const [talentType, setTalentType] = useState<TalentType>('exclusive');
   const [influencerId, setInfluencerId] = useState(activeInfluencer?.id || influencers[0]?.id || '');
+  
+  // Non-exclusive talent fields
+  const [nonExclusiveName, setNonExclusiveName] = useState('');
+  const [nonExclusiveHandle, setNonExclusiveHandle] = useState('');
+  const [nonExclusiveContact, setNonExclusiveContact] = useState('');
+
   const [brandId, setBrandId] = useState(brands[0]?.id || '');
   const [newBrandName, setNewBrandName] = useState('');
   const [campaignName, setCampaignName] = useState('');
@@ -67,6 +75,17 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (talentType === 'non_exclusive') {
+      if (!nonExclusiveName.trim()) {
+        alert('Please enter the Non-Exclusive Influencer Name.');
+        return;
+      }
+      if (!nonExclusiveHandle.trim()) {
+        alert('Please enter the Instagram / Social Handle.');
+        return;
+      }
+    }
+
     const selectedBrand = brands.find(b => b.id === brandId);
     const finalBrandName = brandId === 'NEW' ? newBrandName : selectedBrand?.name || 'Brand';
 
@@ -81,10 +100,20 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
       }));
 
     const selectedInf = influencers.find(i => i.id === influencerId);
-    const generatedTitle = campaignName || `${selectedInf?.name || 'Influencer'} × ${finalBrandName}`;
+    const talentDisplayName = talentType === 'exclusive'
+      ? (selectedInf?.name || 'Influencer')
+      : nonExclusiveName.trim();
+
+    const generatedTitle = campaignName || `${talentDisplayName} × ${finalBrandName}`;
 
     const newCampaign = db.saveCampaign({
-      influencerId,
+      talentType,
+      influencerId: talentType === 'exclusive' ? influencerId : 'non-exclusive',
+      nonExclusiveTalent: talentType === 'non_exclusive' ? {
+        name: nonExclusiveName.trim(),
+        handle: nonExclusiveHandle.trim().startsWith('@') ? nonExclusiveHandle.trim() : `@${nonExclusiveHandle.trim()}`,
+        email: nonExclusiveContact.trim() || undefined
+      } : undefined,
       brandId: brandId === 'NEW' ? 'brand-' + Date.now() : brandId,
       brandName: finalBrandName,
       campaignName: generatedTitle,
@@ -120,22 +149,110 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
         </div>
 
         <form onSubmit={handleSave} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto text-xs">
-          {/* Select Influencer */}
-          <div>
-            <label className="block text-slate-300 font-semibold mb-1">Select Technology Influencer *</label>
-            <select
-              value={influencerId}
-              onChange={e => setInfluencerId(e.target.value)}
-              className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded-lg p-2.5 focus:border-cyan-400 focus:outline-none"
-              required
-            >
-              {influencers.map(inf => (
-                <option key={inf.id} value={inf.id}>
-                  {inf.name} ({inf.handle})
-                </option>
-              ))}
-            </select>
+          {/* Talent Type Selection */}
+          <div className="space-y-1.5">
+            <label className="block text-slate-300 font-semibold">Talent Type *</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setTalentType('exclusive')}
+                className={`p-3 rounded-xl border flex items-center gap-2.5 transition-all text-left ${
+                  talentType === 'exclusive'
+                    ? 'bg-cyan-500/15 border-cyan-400 text-cyan-300 shadow-sm shadow-cyan-500/20'
+                    : 'bg-[#0b0f17] border-tech-border text-slate-400 hover:border-slate-600'
+                }`}
+              >
+                <div className={`p-1.5 rounded-lg ${talentType === 'exclusive' ? 'bg-cyan-400 text-black' : 'bg-slate-800 text-slate-400'}`}>
+                  <UserCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold block text-xs">Exclusive Talent</span>
+                  <span className="text-[10px] text-slate-400 block">From Exclusive Roster</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTalentType('non_exclusive')}
+                className={`p-3 rounded-xl border flex items-center gap-2.5 transition-all text-left ${
+                  talentType === 'non_exclusive'
+                    ? 'bg-amber-500/15 border-amber-400 text-amber-300 shadow-sm shadow-amber-500/20'
+                    : 'bg-[#0b0f17] border-tech-border text-slate-400 hover:border-slate-600'
+                }`}
+              >
+                <div className={`p-1.5 rounded-lg ${talentType === 'non_exclusive' ? 'bg-amber-400 text-black' : 'bg-slate-800 text-slate-400'}`}>
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold block text-xs">Non-Exclusive Talent</span>
+                  <span className="text-[10px] text-slate-400 block">External / One-Off</span>
+                </div>
+              </button>
+            </div>
           </div>
+
+          {/* Conditional Talent Input */}
+          {talentType === 'exclusive' ? (
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Select from Exclusive Roster *</label>
+              <select
+                value={influencerId}
+                onChange={e => setInfluencerId(e.target.value)}
+                className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded-lg p-2.5 focus:border-cyan-400 focus:outline-none"
+                required
+              >
+                {influencers.map(inf => (
+                  <option key={inf.id} value={inf.id}>
+                    {inf.name} ({inf.handle})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="bg-[#0b0f17] border border-amber-500/30 rounded-xl p-3.5 space-y-3">
+              <div className="flex items-start gap-2 text-amber-400/90 text-[11px] pb-2 border-b border-amber-500/20">
+                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+                <span>Non-Exclusive Talent: This creator is not added to the Exclusive Influencer Roster. Details are saved securely with this collaboration only.</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Influencer Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Aman Dhattarwal / Tech Burner"
+                    value={nonExclusiveName}
+                    onChange={e => setNonExclusiveName(e.target.value)}
+                    className="w-full bg-tech-card border border-tech-border text-slate-200 rounded-lg p-2.5 focus:border-amber-400 focus:outline-none"
+                    required={talentType === 'non_exclusive'}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Instagram / Social Handle *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. @techburner"
+                    value={nonExclusiveHandle}
+                    onChange={e => setNonExclusiveHandle(e.target.value)}
+                    className="w-full bg-tech-card border border-tech-border text-slate-200 rounded-lg p-2.5 focus:border-amber-400 focus:outline-none"
+                    required={talentType === 'non_exclusive'}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Email / Contact Info</label>
+                <input
+                  type="text"
+                  placeholder="e.g. creator@gmail.com / +91 98765 43210"
+                  value={nonExclusiveContact}
+                  onChange={e => setNonExclusiveContact(e.target.value)}
+                  className="w-full bg-tech-card border border-tech-border text-slate-200 rounded-lg p-2.5 focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Select / Add Brand */}
           <div>

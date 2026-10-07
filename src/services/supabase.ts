@@ -311,7 +311,9 @@ export async function migrateLocalStorageToSupabase(localData: DatabaseSchema): 
         .upsert(
           localData.campaigns.map(c => ({
             id: c.id,
-            influencer_id: c.influencerId,
+            influencer_id: c.talentType === 'non_exclusive' ? (c.influencerId === 'non-exclusive' ? null : c.influencerId || null) : c.influencerId,
+            talent_type: c.talentType || 'exclusive',
+            non_exclusive_talent: c.nonExclusiveTalent || null,
             brand_id: c.brandId || null,
             brand_name: c.brandName,
             campaign_name: c.campaignName,

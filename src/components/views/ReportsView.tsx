@@ -148,6 +148,7 @@ export const ReportsView: React.FC = () => {
         'Date',
         'Month',
         'Influencer',
+        'Talent Type',
         'Brand',
         'Brand Manager',
         'Collaboration Name',
@@ -169,7 +170,7 @@ export const ReportsView: React.FC = () => {
       csvRows.push(headers);
 
       filteredCampaigns.forEach(c => {
-        const inf = db.getInfluencerById(c.influencerId);
+        const talent = db.getTalentInfoForCampaign(c);
         const locked = c.lockedCommercial || c.dealAmount || 0;
         const received = c.receivedCommercial !== undefined ? c.receivedCommercial : (c.paymentStatus === 'Received' ? locked : 0);
         const tds = c.tdsDeductedAmount || 0;
@@ -181,7 +182,8 @@ export const ReportsView: React.FC = () => {
         const row = [
           c.startDate || c.dealLockedDate || '—',
           mLabel,
-          inf?.name || 'N/A',
+          talent.name,
+          talent.isExclusive ? 'Exclusive Talent' : 'Non-Exclusive Talent',
           c.brandName,
           c.brandManager || c.contactPerson || '—',
           `"${(c.campaignName || '').replace(/"/g, '""')}"`,
@@ -208,6 +210,7 @@ export const ReportsView: React.FC = () => {
         'Month',
         'Date',
         'Influencer',
+        'Talent Type',
         'Brand',
         'Collaboration',
         'Locked Commercial (INR)',
@@ -223,7 +226,7 @@ export const ReportsView: React.FC = () => {
       csvRows.push(headers);
 
       filteredCampaigns.forEach(c => {
-        const inf = db.getInfluencerById(c.influencerId);
+        const talent = db.getTalentInfoForCampaign(c);
         const locked = c.lockedCommercial || c.dealAmount || 0;
         const received = c.receivedCommercial !== undefined ? c.receivedCommercial : (c.paymentStatus === 'Received' ? locked : 0);
         const tds = c.tdsDeductedAmount || 0;
@@ -236,7 +239,8 @@ export const ReportsView: React.FC = () => {
         const row = [
           mLabel,
           c.startDate || c.dealLockedDate || '—',
-          inf?.name || 'N/A',
+          talent.name,
+          talent.isExclusive ? 'Exclusive Talent' : 'Non-Exclusive Talent',
           c.brandName,
           `"${(c.campaignName || '').replace(/"/g, '""')}"`,
           `₹${locked.toLocaleString('en-IN')}`,
@@ -539,7 +543,7 @@ export const ReportsView: React.FC = () => {
                 </tr>
               ) : (
                 filteredCampaigns.map(c => {
-                  const inf = db.getInfluencerById(c.influencerId);
+                  const talent = db.getTalentInfoForCampaign(c);
                   const locked = c.lockedCommercial || c.dealAmount || 0;
                   const received = c.receivedCommercial !== undefined ? c.receivedCommercial : (c.paymentStatus === 'Received' ? locked : 0);
                   const tds = c.tdsDeductedAmount || 0;
@@ -548,7 +552,14 @@ export const ReportsView: React.FC = () => {
                   return (
                     <tr key={c.id} className="hover:bg-tech-surface/30 transition-colors">
                       <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{c.startDate || c.dealLockedDate || '—'}</td>
-                      <td className="py-2.5 px-3 text-slate-200 font-medium whitespace-nowrap">{inf?.name || '—'}</td>
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <span className="text-slate-200 font-medium block">{talent.name}</span>
+                        {talent.isExclusive ? (
+                          <span className="text-[9px] text-cyan-400 font-mono">Exclusive</span>
+                        ) : (
+                          <span className="text-[9px] text-amber-400 font-mono">Non-Exclusive</span>
+                        )}
+                      </td>
                       <td className="py-2.5 px-3 text-slate-300 whitespace-nowrap">{c.brandName}</td>
                       <td className="py-2.5 px-3 text-slate-300 max-w-xs truncate" title={c.campaignName}>{c.campaignName}</td>
                       <td className="py-2.5 px-3 text-right font-mono text-slate-200 whitespace-nowrap">₹{locked.toLocaleString('en-IN')}</td>

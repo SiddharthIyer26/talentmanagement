@@ -116,7 +116,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
             </div>
           ) : (
             filteredCampaigns.map(c => {
-              const inf = db.getInfluencerById(c.influencerId);
+              const talent = db.getTalentInfoForCampaign(c);
               const urgency = db.getPaymentUrgency(c);
 
               return (
@@ -126,14 +126,23 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
                   className="p-4 hover:bg-slate-800/40 cursor-pointer transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                       <span className="px-2 py-0.5 rounded font-mono text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-bold">
                         {c.brandName}
                       </span>
+                      {talent.isExclusive ? (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                          Exclusive Talent
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                          Non-Exclusive Talent
+                        </span>
+                      )}
                       <h3 className="font-bold text-slate-100">{c.campaignName}</h3>
                     </div>
                     <p className="text-[11px] text-slate-400">
-                      Creator: <strong className="text-slate-300">{inf?.name}</strong> • Live Date:{' '}
+                      Creator: <strong className="text-slate-300">{talent.name}</strong> • Live Date:{' '}
                       <span className="font-mono">{c.liveDate || 'Pending'}</span> • Terms:{' '}
                       <span className="font-mono">{c.paymentTermsDays} Days</span>
                     </p>

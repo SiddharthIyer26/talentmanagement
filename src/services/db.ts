@@ -9,7 +9,9 @@ import {
   ProductionStatus,
   InstagramInsightsSnapshot,
   MediaKitFeaturedReel,
-  ManagementUser
+  ManagementUser,
+  TalentType,
+  NonExclusiveTalentInfo
 } from '../types';
 
 const LOCAL_STORAGE_KEY = 'talent_os_db_v1';
@@ -668,6 +670,9 @@ class DatabaseService {
     const today = new Date(todayStr);
 
     this.data.campaigns.forEach(campaign => {
+      // Default talent type to 'exclusive'
+      campaign.talentType = campaign.talentType || 'exclusive';
+
       // Auto calculate due date if live date and payment terms exist
       if (campaign.liveDate && campaign.paymentTermsDays) {
         const live = new Date(campaign.liveDate);
@@ -1051,6 +1056,10 @@ class DatabaseService {
         const updated = {
           ...existing,
           ...campaign,
+          talentType: campaign.talentType || existing.talentType || 'exclusive',
+          nonExclusiveTalent: (campaign.talentType === 'non_exclusive' || existing.talentType === 'non_exclusive')
+            ? (campaign.nonExclusiveTalent !== undefined ? campaign.nonExclusiveTalent : existing.nonExclusiveTalent)
+            : undefined,
           lockedCommercial,
           dealAmount: lockedCommercial,
           commissionPercentage,
@@ -1096,9 +1105,12 @@ class DatabaseService {
 
     // New Campaign
     const newId = 'camp-' + (100 + this.data.campaigns.length + 1);
+    const talentType: TalentType = campaign.talentType || 'exclusive';
     const newCampaign: Campaign = {
       id: newId,
-      influencerId: campaign.influencerId || '',
+      talentType,
+      nonExclusiveTalent: talentType === 'non_exclusive' ? campaign.nonExclusiveTalent : undefined,
+      influencerId: talentType === 'non_exclusive' ? (campaign.influencerId || 'non-exclusive') : (campaign.influencerId || ''),
       brandId: campaign.brandId || '',
       brandName: campaign.brandName || 'Brand',
       campaignName: campaign.campaignName || 'New Campaign',
@@ -1138,6 +1150,8 @@ class DatabaseService {
     if (!original) return null;
 
     const copy: Partial<Campaign> = {
+      talentType: original.talentType || 'exclusive',
+      nonExclusiveTalent: original.nonExclusiveTalent,
       influencerId: original.influencerId,
       brandId: original.brandId,
       brandName: original.brandName,
@@ -1436,18 +1450,30 @@ class DatabaseService {
       return acc + Math.max(0, total - rec);
     }, 0);
 
-    // 4. My Commission Revenue: Total commission I have earned from collaborations
-    const myCommissionRevenue = campaigns.reduce((acc, c) => {
-      return acc + (c.commissionEarned || 0);
-    }, 0);
+    // 4. Commission Classification: Total, Exclusive, and Non-Exclusive
+    const exclusiveCommission = campaigns
+      .filter(c => (c.talentType || 'exclusive') === 'exclusive')
+      .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+
+    const nonExclusiveCommission = campaigns
+      .filter(c => c.talentType === 'non_exclusive')
+      .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+
+    // Total Commission strictly reconciles: Total = Exclusive + Non-Exclusive
+    const totalCommission = exclusiveCommission + nonExclusiveCommission;
+    const myCommissionRevenue = totalCommission;
 
     // Commission from Received Deals
-    const myReceivedCommission = campaigns.reduce((acc, c) => {
-      if (c.paymentStatus === 'Received' || c.paymentStatus === 'Paid') {
-        return acc + (c.commissionEarned || 0);
-      }
-      return acc;
-    }, 0);
+    const exclusiveReceivedCommission = campaigns
+      .filter(c => (c.talentType || 'exclusive') === 'exclusive' && (c.paymentStatus === 'Received' || c.paymentStatus === 'Paid'))
+      .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+
+    const nonExclusiveReceivedCommission = campaigns
+      .filter(c => c.talentType === 'non_exclusive' && (c.paymentStatus === 'Received' || c.paymentStatus === 'Paid'))
+      .reduce((acc, c) => acc + (c.commissionEarned || 0), 0);
+
+    const totalReceivedCommission = exclusiveReceivedCommission + nonExclusiveReceivedCommission;
+    const myReceivedCommission = totalReceivedCommission;
 
     // 5. Total TDS Deducted
     const tdsDeducted = campaigns.reduce((acc, c) => acc + (c.tdsDeductedAmount || 0), 0);
@@ -1461,6 +1487,12 @@ class DatabaseService {
 
     return {
       totalInfluencerRevenue,
+      totalCommission,
+      exclusiveCommission,
+      nonExclusiveCommission,
+      totalReceivedCommission,
+      exclusiveReceivedCommission,
+      nonExclusiveReceivedCommission,
       myCommissionRevenue,
       myReceivedCommission,
       totalReceivables,
@@ -1473,7 +1505,36 @@ class DatabaseService {
       pendingPayments: totalReceivables,
       overduePayments,
       totalExpenses: 0,
-      netEarnings: myCommissionRevenue
+      netEarnings: totalCommission
+    };
+  }
+
+  // --- Talent Info Helper for Collaborations (Exclusive vs Non-Exclusive) ---
+  public getTalentInfoForCampaign(campaign: Campaign): {
+    name: string;
+    handle: string;
+    email?: string;
+    phone?: string;
+    isExclusive: boolean;
+    avatarUrl?: string;
+  } {
+    if (campaign.talentType === 'non_exclusive') {
+      return {
+        name: campaign.nonExclusiveTalent?.name || 'Non-Exclusive Talent',
+        handle: campaign.nonExclusiveTalent?.handle || '@creator',
+        email: campaign.nonExclusiveTalent?.email,
+        phone: campaign.nonExclusiveTalent?.phone,
+        isExclusive: false
+      };
+    }
+    const inf = this.getInfluencerById(campaign.influencerId);
+    return {
+      name: inf?.name || 'Exclusive Talent',
+      handle: inf?.handle || '',
+      email: inf?.email,
+      phone: inf?.phone,
+      isExclusive: true,
+      avatarUrl: inf?.avatarUrl
     };
   }
 

@@ -302,7 +302,9 @@ GRANT SELECT ON public.brands_directory TO authenticated;
 -- 6.1 COLLABORATIONS / CAMPAIGNS TABLE
 CREATE TABLE IF NOT EXISTS public.campaigns (
   id TEXT PRIMARY KEY,
-  influencer_id TEXT NOT NULL REFERENCES public.influencers(id) ON DELETE CASCADE,
+  influencer_id TEXT REFERENCES public.influencers(id) ON DELETE SET NULL,
+  talent_type TEXT NOT NULL DEFAULT 'exclusive' CHECK (talent_type IN ('exclusive', 'non_exclusive')),
+  non_exclusive_talent JSONB DEFAULT NULL,
   brand_id TEXT REFERENCES public.brands(id) ON DELETE SET NULL,
   brand_name TEXT NOT NULL,
   campaign_name TEXT NOT NULL,
@@ -641,13 +643,25 @@ CREATE POLICY admin_campaigns_all ON public.campaigns
 DROP POLICY IF EXISTS influencer_view_own_campaigns ON public.campaigns;
 CREATE POLICY influencer_view_own_campaigns ON public.campaigns
   FOR SELECT TO authenticated
-  USING (influencer_id = public.current_influencer_id());
+  USING (
+    influencer_id IS NOT NULL 
+    AND influencer_id <> '' 
+    AND influencer_id = public.current_influencer_id()
+  );
 
 DROP POLICY IF EXISTS influencer_update_metrics ON public.campaigns;
 CREATE POLICY influencer_update_metrics ON public.campaigns
   FOR UPDATE TO authenticated
-  USING (influencer_id = public.current_influencer_id())
-  WITH CHECK (influencer_id = public.current_influencer_id());
+  USING (
+    influencer_id IS NOT NULL 
+    AND influencer_id <> '' 
+    AND influencer_id = public.current_influencer_id()
+  )
+  WITH CHECK (
+    influencer_id IS NOT NULL 
+    AND influencer_id <> '' 
+    AND influencer_id = public.current_influencer_id()
+  );
 
 -- 10.5 INVOICES:
 -- - Admins have full access
@@ -735,4 +749,30 @@ ON CONFLICT (id) DO UPDATE SET
   account_status = 'active',
   email = COALESCE(NULLIF(public.influencers.email, ''), EXCLUDED.email),
   updated_at = NOW();
+
+-- ==============================================================================
+-- 12. IDEMPOTENT MIGRATIONS FOR EXISTING DEPLOYMENTS
+-- Safely applies schema enhancements to existing production databases without data loss.
+-- ==============================================================================
+
+-- 12.1 Non-Exclusive Talents support in campaigns
+DO $$
+BEGIN
+  -- Make influencer_id nullable for non-exclusive campaigns
+  ALTER TABLE public.campaigns ALTER COLUMN influencer_id DROP NOT NULL;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
+
+ALTER TABLE public.campaigns 
+  ADD COLUMN IF NOT EXISTS talent_type TEXT NOT NULL DEFAULT 'exclusive' CHECK (talent_type IN ('exclusive', 'non_exclusive'));
+
+ALTER TABLE public.campaigns 
+  ADD COLUMN IF NOT EXISTS non_exclusive_talent JSONB DEFAULT NULL;
+
+-- Safely backfill any pre-existing campaigns without a talent_type to 'exclusive'
+UPDATE public.campaigns 
+SET talent_type = 'exclusive' 
+WHERE talent_type IS NULL;
+
 
