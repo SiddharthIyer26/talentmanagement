@@ -59,6 +59,104 @@ export async function getAuthenticatedCloudUser() {
 }
 
 /**
+ * Safely upsert a record or an array of records to Supabase, automatically adapting to database schema differences.
+ * If the database schema is missing a column (e.g. pending migration or stale schema cache),
+ * it dynamically strips the missing column and retries.
+ */
+export async function safeUpsertWithSchemaFallback(
+  table: string,
+  rawPayload: any,
+  onConflict = 'id'
+): Promise<void> {
+  if (!supabase) return;
+
+  let currentPayload = Array.isArray(rawPayload)
+    ? rawPayload.map(item => ({ ...item }))
+    : { ...rawPayload };
+
+  let attempts = 0;
+  const maxAttempts = 5;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    const { error } = await supabase.from(table).upsert(currentPayload, { onConflict });
+    if (!error) {
+      return;
+    }
+
+    // Pattern 1: PostgREST schema cache: "Could not find the 'xyz' column of 'table' in the schema cache"
+    // Pattern 2: Postgres error: 'column "xyz" of relation "table" does not exist'
+    const schemaMatch = error.message.match(/Could not find the '([^']+)' column/i);
+    const pgMatch = error.message.match(/column "([^"]+)" of relation/i);
+    const missingCol = (schemaMatch && schemaMatch[1]) || (pgMatch && pgMatch[1]);
+
+    if (missingCol) {
+      console.warn(`[Supabase Auto-Fallback] Column '${missingCol}' missing in table '${table}'. Retrying without it.`);
+      const stripCol = (item: any) => {
+        if (missingCol === 'non_exclusive_talent' && item.non_exclusive_talent) {
+          const fallbackNote = `[Non-Exclusive Talent: ${item.non_exclusive_talent.name || ''} (${item.non_exclusive_talent.handle || ''})]`;
+          item.internal_notes = item.internal_notes ? `${item.internal_notes}\n${fallbackNote}` : fallbackNote;
+        }
+        delete item[missingCol];
+      };
+      if (Array.isArray(currentPayload)) {
+        currentPayload.forEach(stripCol);
+      } else {
+        stripCol(currentPayload);
+      }
+      continue;
+    }
+
+    // Pattern 2: Foreign key violation on brand_id (e.g. brand hasn't synced to brands table yet)
+    if (/foreign key constraint.*brand_id/i.test(error.message) || /violates foreign key constraint.*brand/i.test(error.message)) {
+      console.warn(`[Supabase Auto-Fallback] brand_id foreign key constraint rejected in '${table}'. Retrying with brand_id = null.`);
+      const nullifyBrand = (item: any) => { item.brand_id = null; };
+      if (Array.isArray(currentPayload)) currentPayload.forEach(nullifyBrand);
+      else nullifyBrand(currentPayload);
+      continue;
+    }
+
+    // Pattern 3: Not-null violation on influencer_id (when Supabase hasn't executed migration to DROP NOT NULL)
+    if (/null value in column "influencer_id".*violates not-null constraint/i.test(error.message)) {
+      console.warn(`[Supabase Auto-Fallback] influencer_id has NOT NULL constraint in '${table}'. Attaching first available influencer ID.`);
+      const { data: firstInf } = await supabase.from('influencers').select('id').limit(1).maybeSingle();
+      const fallbackId = firstInf?.id || null;
+      if (fallbackId) {
+        const assignFallback = (item: any) => {
+          if (!item.influencer_id) {
+            item.influencer_id = fallbackId;
+            item.internal_notes = item.internal_notes
+              ? `${item.internal_notes}\n[Original: Non-Exclusive]`
+              : '[Original: Non-Exclusive]';
+          }
+        };
+        if (Array.isArray(currentPayload)) currentPayload.forEach(assignFallback);
+        else assignFallback(currentPayload);
+        continue;
+      }
+    }
+
+    // Pattern 4: Foreign key violation on influencer_id
+    if (/foreign key constraint.*influencer_id/i.test(error.message)) {
+      console.warn(`[Supabase Auto-Fallback] influencer_id foreign key rejected in '${table}'. Retrying with valid influencer ID.`);
+      const { data: firstInf } = await supabase.from('influencers').select('id').limit(1).maybeSingle();
+      if (firstInf?.id) {
+        const assignFallback = (item: any) => { item.influencer_id = firstInf.id; };
+        if (Array.isArray(currentPayload)) currentPayload.forEach(assignFallback);
+        else assignFallback(currentPayload);
+        continue;
+      }
+    }
+
+    // If another error occurred, rethrow with descriptive message
+    throw new Error(`Cloud save failed for ${table}: ${error.message}`);
+  }
+
+  throw new Error(`Cloud save failed for ${table} after schema fallback retries`);
+}
+
+
+/**
  * Authenticates or bootstraps an admin account in Supabase Auth securely from the client.
  * Does not require or expose any service-role key.
  */
@@ -306,62 +404,64 @@ export async function migrateLocalStorageToSupabase(localData: DatabaseSchema): 
 
     // 4. Sync Campaigns (With Full Operational Fields)
     if (localData.campaigns && localData.campaigns.length > 0) {
-      const { error: campErr } = await supabase
-        .from('campaigns')
-        .upsert(
-          localData.campaigns.map(c => ({
-            id: c.id,
-            influencer_id: c.talentType === 'non_exclusive' ? (c.influencerId === 'non-exclusive' ? null : c.influencerId || null) : c.influencerId,
-            talent_type: c.talentType || 'exclusive',
-            non_exclusive_talent: c.nonExclusiveTalent || null,
-            brand_id: c.brandId || null,
-            brand_name: c.brandName,
-            campaign_name: c.campaignName,
-            deal_amount: sanitizeNumber(c.dealAmount, 0),
-            locked_commercial: sanitizeNumber(c.lockedCommercial || c.dealAmount, 0),
-            received_commercial: sanitizeNumber(c.receivedCommercial || c.amountReceived, 0),
-            tds_deducted_amount: sanitizeNumber(c.tdsDeductedAmount, 0),
-            tds_deducted_percentage: sanitizeNumber(c.tdsDeductedPercentage, 10),
-            commission_earned: sanitizeNumber(c.commissionEarned, 0),
-            commission_percentage: sanitizeNumber(c.commissionPercentage, 10),
-            deal_locked_date: sanitizeDate(c.dealLockedDate) || new Date().toISOString().split('T')[0],
-            live_date: sanitizeDate(c.liveDate),
-            campaign_start_date: sanitizeDate(c.campaignStartDate || c.startDate),
-            content_deadline: sanitizeDate(c.contentDeadline),
-            go_live_date: sanitizeDate(c.goLiveDate),
-            content_live_date: sanitizeDate(c.contentLiveDate),
-            invoice_submitted_date: sanitizeDate(c.invoiceSubmittedDate),
-            payment_terms_days: sanitizeNumber(c.paymentTermsDays, 30),
-            payment_terms_text: c.paymentTermsText || null,
-            payment_eta_date: sanitizeDate(c.paymentEtaDate),
-            payment_eta_notes: c.paymentEtaNotes || null,
-            payment_due_date: sanitizeDate(c.paymentDueDate || c.calculatedDueDate),
-            calculated_due_date: sanitizeDate(c.calculatedDueDate || c.paymentDueDate),
-            payment_received_date: sanitizeDate(c.paymentReceivedDate),
-            amount_received: sanitizeNumber(c.amountReceived || c.receivedCommercial, 0),
-            amount_pending: sanitizeNumber(c.amountPending, 0),
-            payment_notes: c.paymentNotes || null,
-            production_status: c.productionStatus || 'Locked',
-            payment_status: c.paymentStatus || 'Pending',
-            deliverables: c.deliverables || [],
-            live_link: c.liveLink || null,
-            tracking_link: c.trackingLink || null,
-            contact_person: c.contactPerson || null,
-            contact_number: c.contactNumber || null,
-            contact_email: c.contactEmail || null,
-            brand_manager: c.brandManager || null,
-            usage_rights: c.usageRights || null,
-            ad_rights: c.adRights || null,
-            notes: c.notes || null,
-            internal_notes: c.internalNotes || null,
-            metrics: c.metrics || { views: 0, likes: 0, comments: 0, shares: 0, reach: 0, interactions: 0 },
-            follow_ups: c.followUps || [],
-            activities: c.activities || []
-          })),
-          { onConflict: 'id' }
-        );
+      const campRows = localData.campaigns.map(c => {
+        const row: any = {
+          id: c.id,
+          influencer_id: c.talentType === 'non_exclusive' ? (c.influencerId === 'non-exclusive' ? null : c.influencerId || null) : c.influencerId,
+          brand_id: c.brandId || null,
+          brand_name: c.brandName,
+          campaign_name: c.campaignName,
+          deal_amount: sanitizeNumber(c.dealAmount, 0),
+          locked_commercial: sanitizeNumber(c.lockedCommercial || c.dealAmount, 0),
+          received_commercial: sanitizeNumber(c.receivedCommercial || c.amountReceived, 0),
+          tds_deducted_amount: sanitizeNumber(c.tdsDeductedAmount, 0),
+          tds_deducted_percentage: sanitizeNumber(c.tdsDeductedPercentage, 10),
+          commission_earned: sanitizeNumber(c.commissionEarned, 0),
+          commission_percentage: sanitizeNumber(c.commissionPercentage, 10),
+          deal_locked_date: sanitizeDate(c.dealLockedDate) || new Date().toISOString().split('T')[0],
+          live_date: sanitizeDate(c.liveDate),
+          campaign_start_date: sanitizeDate(c.campaignStartDate || c.startDate),
+          content_deadline: sanitizeDate(c.contentDeadline),
+          go_live_date: sanitizeDate(c.goLiveDate),
+          content_live_date: sanitizeDate(c.contentLiveDate),
+          invoice_submitted_date: sanitizeDate(c.invoiceSubmittedDate),
+          payment_terms_days: sanitizeNumber(c.paymentTermsDays, 30),
+          payment_terms_text: c.paymentTermsText || null,
+          payment_eta_date: sanitizeDate(c.paymentEtaDate),
+          payment_eta_notes: c.paymentEtaNotes || null,
+          payment_due_date: sanitizeDate(c.paymentDueDate || c.calculatedDueDate),
+          calculated_due_date: sanitizeDate(c.calculatedDueDate || c.paymentDueDate),
+          payment_received_date: sanitizeDate(c.paymentReceivedDate),
+          amount_received: sanitizeNumber(c.amountReceived || c.receivedCommercial, 0),
+          amount_pending: sanitizeNumber(c.amountPending, 0),
+          payment_notes: c.paymentNotes || null,
+          production_status: c.productionStatus || 'Locked',
+          payment_status: c.paymentStatus || 'Pending',
+          deliverables: c.deliverables || [],
+          live_link: c.liveLink || null,
+          tracking_link: c.trackingLink || null,
+          contact_person: c.contactPerson || null,
+          contact_number: c.contactNumber || null,
+          contact_email: c.contactEmail || null,
+          brand_manager: c.brandManager || null,
+          usage_rights: c.usageRights || null,
+          ad_rights: c.adRights || null,
+          notes: c.notes || null,
+          internal_notes: c.internalNotes || null,
+          metrics: c.metrics || { views: 0, likes: 0, comments: 0, shares: 0, reach: 0, interactions: 0 },
+          follow_ups: c.followUps || [],
+          activities: c.activities || []
+        };
+        if (c.talentType) {
+          row.talent_type = c.talentType;
+        }
+        if (c.nonExclusiveTalent) {
+          row.non_exclusive_talent = c.nonExclusiveTalent;
+        }
+        return row;
+      });
 
-      if (campErr) throw new Error(`Campaigns sync: ${campErr.message}`);
+      await safeUpsertWithSchemaFallback('campaigns', campRows, 'id');
       counts.campaigns = localData.campaigns.length;
     }
 

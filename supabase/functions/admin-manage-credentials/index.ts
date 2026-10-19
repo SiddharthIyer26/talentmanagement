@@ -203,7 +203,7 @@ Deno.serve(async (req: Request) => {
     const findAuthUserByEmail = async (email: string) => {
       const { data, error } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
       if (error) throw error;
-      return data.users.find((u) => u.email?.toLowerCase().trim() === email);
+      return data.users.find((u: any) => u.email?.toLowerCase().trim() === email);
     };
 
     // ACTION A: Provision / Update Management User

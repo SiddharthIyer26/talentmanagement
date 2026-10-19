@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured, sanitizeDate, sanitizeNumber } from './supabase';
+import { supabase, isSupabaseConfigured, sanitizeDate, sanitizeNumber, safeUpsertWithSchemaFallback } from './supabase';
 import { Influencer, Campaign, Brand, Invoice } from '../types';
 
 /**
@@ -62,11 +62,20 @@ export function cloudToCampaign(row: any): Campaign {
   const tdsPct = Number(row.tds_deducted_percentage || 10);
   const tdsAmt = Number(row.tds_deducted_amount || Math.round(locked * (tdsPct / 100)));
 
+  // Fallback recovery if non_exclusive_talent column was absent and preserved in internal_notes
+  let nonExTalent = row.non_exclusive_talent;
+  if (!nonExTalent && typeof row.internal_notes === 'string') {
+    const match = row.internal_notes.match(/\[Non-Exclusive Talent:\s*(.*?)\s*\((.*?)\)\]/);
+    if (match) {
+      nonExTalent = { name: match[1], handle: match[2] };
+    }
+  }
+
   return {
     id: row.id,
     influencerId: row.influencer_id || 'non-exclusive',
-    talentType: row.talent_type || (row.influencer_id ? 'exclusive' : 'non_exclusive'),
-    nonExclusiveTalent: row.non_exclusive_talent || undefined,
+    talentType: row.talent_type || (nonExTalent ? 'non_exclusive' : (row.influencer_id ? 'exclusive' : 'non_exclusive')),
+    nonExclusiveTalent: nonExTalent || undefined,
     brandId: row.brand_id || '',
     brandName: row.brand_name || 'Brand',
     campaignName: row.campaign_name || 'Campaign',
@@ -126,11 +135,9 @@ export function campaignToCloud(c: Partial<Campaign>): any {
   const isNonEx = c.talentType === 'non_exclusive';
   const infId = isNonEx ? (c.influencerId === 'non-exclusive' ? null : c.influencerId || null) : (c.influencerId || null);
 
-  return {
+  const payload: any = {
     id: c.id,
     influencer_id: infId,
-    talent_type: c.talentType || 'exclusive',
-    non_exclusive_talent: c.nonExclusiveTalent || null,
     brand_id: c.brandId || null,
     brand_name: c.brandName || 'Brand',
     campaign_name: c.campaignName || 'Campaign',
@@ -160,7 +167,7 @@ export function campaignToCloud(c: Partial<Campaign>): any {
     payment_notes: c.paymentNotes || null,
     production_status: c.productionStatus || 'Locked',
     payment_status: c.paymentStatus || 'Pending',
-    deliverables: c.deliverables || [],
+    deliverables: Array.isArray(c.deliverables) ? c.deliverables : [],
     live_link: c.liveLink || null,
     tracking_link: c.trackingLink || null,
     contact_person: c.contactPerson || null,
@@ -172,9 +179,19 @@ export function campaignToCloud(c: Partial<Campaign>): any {
     notes: c.notes || null,
     internal_notes: c.internalNotes || null,
     metrics: c.metrics || { views: 0, likes: 0, comments: 0, shares: 0, reach: 0, interactions: 0 },
-    follow_ups: c.followUps || [],
-    activities: c.activities || []
+    follow_ups: Array.isArray(c.followUps) ? c.followUps : [],
+    activities: Array.isArray(c.activities) ? c.activities : []
   };
+
+  // Only include talent_type and non_exclusive_talent if explicitly specified
+  if (c.talentType) {
+    payload.talent_type = c.talentType;
+  }
+  if (c.nonExclusiveTalent) {
+    payload.non_exclusive_talent = c.nonExclusiveTalent;
+  }
+
+  return payload;
 }
 
 export function cloudToInvoice(row: any): Invoice {
@@ -332,15 +349,12 @@ export async function fetchCloudData(role: 'ADMIN' | 'INFLUENCER', influencerId?
 }
 
 /**
- * Cloud Writer: Saves an influencer directly to Supabase with error verification.
+ * Cloud Writer: Saves an influencer directly to Supabase with error verification and auto-fallback.
  */
 export async function saveInfluencerCloud(inf: Influencer): Promise<void> {
   if (!supabase || !isSupabaseConfigured()) return;
   const payload = influencerToCloud(inf);
-  const { error } = await supabase.from('influencers').upsert(payload, { onConflict: 'id' });
-  if (error) {
-    throw new Error(`Cloud save failed for influencer: ${error.message}`);
-  }
+  await safeUpsertWithSchemaFallback('influencers', payload, 'id');
 }
 
 /**
@@ -355,15 +369,12 @@ export async function deleteInfluencerCloud(id: string): Promise<void> {
 }
 
 /**
- * Cloud Writer: Saves a campaign directly to Supabase with error verification.
+ * Cloud Writer: Saves a campaign directly to Supabase with error verification and auto-fallback.
  */
 export async function saveCampaignCloud(c: Partial<Campaign>): Promise<void> {
   if (!supabase || !isSupabaseConfigured()) return;
   const payload = campaignToCloud(c);
-  const { error } = await supabase.from('campaigns').upsert(payload, { onConflict: 'id' });
-  if (error) {
-    throw new Error(`Cloud save failed for collaboration: ${error.message}`);
-  }
+  await safeUpsertWithSchemaFallback('campaigns', payload, 'id');
 }
 
 /**
@@ -383,10 +394,7 @@ export async function deleteCampaignCloud(id: string): Promise<void> {
 export async function saveInvoiceCloud(inv: Partial<Invoice>): Promise<void> {
   if (!supabase || !isSupabaseConfigured()) return;
   const payload = invoiceToCloud(inv);
-  const { error } = await supabase.from('invoices').upsert(payload, { onConflict: 'id' });
-  if (error) {
-    throw new Error(`Cloud save failed for invoice: ${error.message}`);
-  }
+  await safeUpsertWithSchemaFallback('invoices', payload, 'id');
 }
 
 /**
@@ -406,10 +414,7 @@ export async function deleteInvoiceCloud(id: string): Promise<void> {
 export async function saveBrandCloud(b: Partial<Brand>): Promise<void> {
   if (!supabase || !isSupabaseConfigured()) return;
   const payload = brandToCloud(b);
-  const { error } = await supabase.from('brands').upsert(payload, { onConflict: 'id' });
-  if (error) {
-    throw new Error(`Cloud save failed for brand: ${error.message}`);
-  }
+  await safeUpsertWithSchemaFallback('brands', payload, 'id');
 }
 
 /**

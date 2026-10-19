@@ -44,6 +44,7 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
   const [paymentTermsDays, setPaymentTermsDays] = useState<number>(30);
   const [productionStatus, setProductionStatus] = useState<ProductionStatus>('Locked');
   const [deliverablesText, setDeliverablesText] = useState('1x Collab Reel\n2x Instagram Stories');
+  const [isSaving, setIsSaving] = useState(false);
 
   if (!isOpen) return null;
 
@@ -106,7 +107,28 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
 
     const generatedTitle = campaignName || `${talentDisplayName} × ${finalBrandName}`;
 
+    setIsSaving(true);
     try {
+      let finalBrandId = brandId === 'NEW' ? '' : brandId;
+      if (brandId === 'NEW' && finalBrandName.trim()) {
+        const newBId = 'brand-' + Date.now();
+        try {
+          await db.saveBrand({
+            id: newBId,
+            name: finalBrandName.trim(),
+            contactPerson: 'Brand Manager',
+            brandManager: 'Brand Manager',
+            email: '',
+            phone: '',
+            notes: 'Created via Add Collaboration'
+          });
+          finalBrandId = newBId;
+        } catch (brandErr) {
+          console.warn('Could not persist new brand record directly:', brandErr);
+          finalBrandId = '';
+        }
+      }
+
       const newCampaign = await db.saveCampaign({
         talentType,
         influencerId: talentType === 'exclusive' ? influencerId : 'non-exclusive',
@@ -115,7 +137,7 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
           handle: nonExclusiveHandle.trim().startsWith('@') ? nonExclusiveHandle.trim() : `@${nonExclusiveHandle.trim()}`,
           email: nonExclusiveContact.trim() || undefined
         } : undefined,
-        brandId: brandId === 'NEW' ? 'brand-' + Date.now() : brandId,
+        brandId: finalBrandId,
         brandName: finalBrandName,
         campaignName: generatedTitle,
         dealAmount: Number(lockedCommercial),
@@ -138,6 +160,8 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
     } catch (err: any) {
       console.error('Error creating campaign:', err);
       alert(`Error creating collaboration in database: ${err?.message || 'Database write rejected'}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -449,9 +473,19 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white rounded-lg font-semibold shadow-lg shadow-cyan-500/20"
+              disabled={isSaving}
+              className={`px-5 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white rounded-lg font-semibold shadow-lg shadow-cyan-500/20 flex items-center gap-2 ${
+                isSaving ? 'opacity-70 cursor-not-allowed' : ''
+              }`}
             >
-              Save Collaboration
+              {isSaving ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Collaboration'
+              )}
             </button>
           </div>
         </form>
