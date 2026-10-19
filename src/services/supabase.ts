@@ -125,9 +125,6 @@ export async function safeUpsertWithSchemaFallback(
         const assignFallback = (item: any) => {
           if (!item.influencer_id) {
             item.influencer_id = fallbackId;
-            item.internal_notes = item.internal_notes
-              ? `${item.internal_notes}\n[Original: Non-Exclusive]`
-              : '[Original: Non-Exclusive]';
           }
         };
         if (Array.isArray(currentPayload)) currentPayload.forEach(assignFallback);

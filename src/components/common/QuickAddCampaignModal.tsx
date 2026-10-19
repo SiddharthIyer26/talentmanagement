@@ -116,11 +116,11 @@ export const QuickAddCampaignModal: React.FC<QuickAddCampaignModalProps> = ({
           await db.saveBrand({
             id: newBId,
             name: finalBrandName.trim(),
-            contactPerson: 'Brand Manager',
-            brandManager: 'Brand Manager',
+            contactPerson: '',
+            brandManager: '',
             email: '',
             phone: '',
-            notes: 'Created via Add Collaboration'
+            notes: ''
           });
           finalBrandId = newBId;
         } catch (brandErr) {
