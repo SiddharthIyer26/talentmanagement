@@ -809,7 +809,42 @@ class DatabaseService {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            invoiceSeqCounter: typeof parsed.invoiceSeqCounter === 'number' ? parsed.invoiceSeqCounter : SEED_DATA.invoiceSeqCounter,
+            influencers: Array.isArray(parsed.influencers) ? parsed.influencers.map((inf: any) => ({
+              ...inf,
+              rateCard: {
+                reel: Number(inf?.rateCard?.reel || 0),
+                collabReel: Number(inf?.rateCard?.collabReel || 0),
+                storeVisitReel: Number(inf?.rateCard?.storeVisitReel || 0),
+                ugcVideo: Number(inf?.rateCard?.ugcVideo || 0),
+                story: Number(inf?.rateCard?.story || 0),
+                carousel: Number(inf?.rateCard?.carousel || 0),
+                adRights30d: Number(inf?.rateCard?.adRights30d || 0),
+                adRights90d: Number(inf?.rateCard?.adRights90d || 0),
+                adRights1y: Number(inf?.rateCard?.adRights1y || 0),
+                ...(inf?.rateCard || {})
+              },
+              bankDetails: inf?.bankDetails || {}
+            })) : JSON.parse(JSON.stringify(SEED_DATA.influencers)),
+            managementUsers: Array.isArray(parsed.managementUsers) ? parsed.managementUsers : (SEED_DATA.managementUsers || []),
+            brands: Array.isArray(parsed.brands) ? parsed.brands : JSON.parse(JSON.stringify(SEED_DATA.brands)),
+            campaigns: Array.isArray(parsed.campaigns) ? parsed.campaigns.map((c: any) => ({
+              ...c,
+              dealAmount: Number(c?.dealAmount || 0),
+              lockedCommercial: Number(c?.lockedCommercial || c?.dealAmount || 0),
+              receivedCommercial: Number(c?.receivedCommercial || c?.amountReceived || 0),
+              followUps: Array.isArray(c?.followUps) ? c.followUps : [],
+              deliverables: Array.isArray(c?.deliverables) ? c.deliverables : [],
+              activities: Array.isArray(c?.activities) ? c.activities : []
+            })) : JSON.parse(JSON.stringify(SEED_DATA.campaigns)),
+            expenses: Array.isArray(parsed.expenses) ? parsed.expenses : JSON.parse(JSON.stringify(SEED_DATA.expenses)),
+            notifications: Array.isArray(parsed.notifications) ? parsed.notifications : JSON.parse(JSON.stringify(SEED_DATA.notifications)),
+            invoices: Array.isArray(parsed.invoices) ? parsed.invoices : JSON.parse(JSON.stringify(SEED_DATA.invoices))
+          };
+        }
       }
     } catch (e) {
       console.error('Failed to load database from localStorage', e);
@@ -834,12 +869,19 @@ class DatabaseService {
 
   // Calculate payment due dates & payment urgency levels automatically
   public recalculateAutomation() {
+    if (!this.data || !Array.isArray(this.data.campaigns)) {
+      return;
+    }
+
     const todayStr = '2026-08-28'; // Current reference system date
     const today = new Date(todayStr);
 
     this.data.campaigns.forEach(campaign => {
       // Default talent type to 'exclusive'
       campaign.talentType = campaign.talentType || 'exclusive';
+      campaign.followUps = Array.isArray(campaign.followUps) ? campaign.followUps : [];
+      campaign.deliverables = Array.isArray(campaign.deliverables) ? campaign.deliverables : [];
+      campaign.activities = Array.isArray(campaign.activities) ? campaign.activities : [];
 
       // Auto calculate due date if live date and payment terms exist
       if (campaign.liveDate && campaign.paymentTermsDays) {

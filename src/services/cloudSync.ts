@@ -21,7 +21,18 @@ export function cloudToInfluencer(row: any): Influencer {
     accountStatus: row.account_status || 'active',
     address: row.address || '',
     bankDetails: row.bank_details || {},
-    rateCard: row.rate_card || {},
+    rateCard: {
+      reel: Number(row.rate_card?.reel || 0),
+      collabReel: Number(row.rate_card?.collabReel || 0),
+      storeVisitReel: Number(row.rate_card?.storeVisitReel || 0),
+      ugcVideo: Number(row.rate_card?.ugcVideo || 0),
+      story: Number(row.rate_card?.story || 0),
+      carousel: Number(row.rate_card?.carousel || 0),
+      adRights30d: Number(row.rate_card?.adRights30d || 0),
+      adRights90d: Number(row.rate_card?.adRights90d || 0),
+      adRights1y: Number(row.rate_card?.adRights1y || 0),
+      ...(row.rate_card || {})
+    },
     mediaKitBio: row.media_kit_bio || '',
     followersCount: Number(row.followers_count || 0),
     monthlyInsightsSnapshots: Array.isArray(row.monthly_insights) ? row.monthly_insights : [],
@@ -118,7 +129,7 @@ export function cloudToCampaign(row: any): Campaign {
     notes: row.notes || undefined,
     internalNotes: row.internal_notes || undefined,
     metrics: row.metrics || { views: 0, likes: 0, comments: 0, shares: 0, reach: 0, interactions: 0 },
-    followUps: Array.isArray(row.follow_ups) ? row.followUps : [],
+    followUps: Array.isArray(row.follow_ups) ? row.follow_ups : (Array.isArray(row.followUps) ? row.followUps : []),
     activities: Array.isArray(row.activities) ? row.activities : []
   };
 }

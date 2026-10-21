@@ -1254,10 +1254,10 @@ export const CampaignDetailModal: React.FC<CampaignDetailModalProps> = ({
                   )}
 
                   <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {campaign.followUps.length === 0 ? (
+                    {(campaign.followUps || []).length === 0 ? (
                       <p className="text-[11px] text-slate-500 italic">No follow-ups recorded yet.</p>
                     ) : (
-                      campaign.followUps.map(fu => (
+                      (campaign.followUps || []).map(fu => (
                         <div key={fu.id} className="p-2 bg-tech-card rounded-lg border border-tech-border text-[11px]">
                           <div className="flex justify-between font-semibold text-slate-300">
                             <span>{fu.contactPerson}</span>

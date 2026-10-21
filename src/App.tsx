@@ -59,17 +59,26 @@ export const App: React.FC = () => {
     setActiveTab('invoice-generator');
   };
 
-  // Verify cloud session with Supabase Auth on launch/reload
+  // Verify cloud session with Supabase Auth on launch/reload (with 4s safety timeout)
   useEffect(() => {
     let isMounted = true;
+    let authTimeout: any = null;
+
     if (isSupabaseConfigured()) {
+      authTimeout = setTimeout(() => {
+        if (!isMounted) return;
+        setIsCheckingAuth(false);
+      }, 4000);
+
       authService.initSession().then(session => {
         if (!isMounted) return;
+        if (authTimeout) clearTimeout(authTimeout);
         setIsAuthenticated(session.isAuthenticated);
         setActiveRole(authService.getRole());
         setIsCheckingAuth(false);
       }).catch(() => {
         if (!isMounted) return;
+        if (authTimeout) clearTimeout(authTimeout);
         setIsAuthenticated(false);
         setIsCheckingAuth(false);
       });
@@ -78,6 +87,7 @@ export const App: React.FC = () => {
     }
     return () => {
       isMounted = false;
+      if (authTimeout) clearTimeout(authTimeout);
     };
   }, []);
 
@@ -343,19 +353,19 @@ export const App: React.FC = () => {
                       <div className="p-3 bg-[#0b0f17] border border-tech-border rounded-xl">
                         <span className="text-[10px] text-slate-400 block font-sans">Single Reel</span>
                         <span className="text-lg font-bold text-slate-100">
-                          ₹{(authService.getActiveInfluencer()?.rateCard.reel || 0).toLocaleString('en-IN')}
+                          ₹{(authService.getActiveInfluencer()?.rateCard?.reel || 0).toLocaleString('en-IN')}
                         </span>
                       </div>
                       <div className="p-3 bg-[#0b0f17] border border-cyan-500/30 rounded-xl">
                         <span className="text-[10px] text-slate-400 block font-sans">Collab Reel</span>
                         <span className="text-lg font-bold text-cyan-400">
-                          ₹{(authService.getActiveInfluencer()?.rateCard.collabReel || 0).toLocaleString('en-IN')}
+                          ₹{(authService.getActiveInfluencer()?.rateCard?.collabReel || 0).toLocaleString('en-IN')}
                         </span>
                       </div>
                       <div className="p-3 bg-[#0b0f17] border border-indigo-500/30 rounded-xl">
                         <span className="text-[10px] text-slate-400 block font-sans">Store Visit Reel</span>
                         <span className="text-lg font-bold text-indigo-400">
-                          ₹{(authService.getActiveInfluencer()?.rateCard.storeVisitReel || 0).toLocaleString('en-IN')}
+                          ₹{(authService.getActiveInfluencer()?.rateCard?.storeVisitReel || 0).toLocaleString('en-IN')}
                         </span>
                       </div>
                     </div>

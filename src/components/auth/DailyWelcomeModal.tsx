@@ -34,7 +34,7 @@ export const DailyWelcomeModal: React.FC<DailyWelcomeModalProps> = ({ onClose })
   const infActiveCollabs = myCampaigns.filter(c => c.productionStatus !== 'Video Published').length;
   const infPendingRevenue = myCampaigns
     .filter(c => c.paymentStatus === 'Pending')
-    .reduce((acc, c) => acc + c.dealAmount, 0);
+    .reduce((acc, c) => acc + Number(c.dealAmount || 0), 0);
   const infInProduction = myCampaigns.filter(
     c => c.productionStatus === 'Under Production' || c.productionStatus === 'Waiting for Approval'
   ).length;
@@ -65,12 +65,12 @@ export const DailyWelcomeModal: React.FC<DailyWelcomeModalProps> = ({ onClose })
             </div>
 
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              {timeGreeting}, {session.name.split(' ')[0]} 👋
+              {timeGreeting}, {(session.name || session.username || 'User').split(' ')[0]} 👋
             </h2>
             <p className="text-xs text-slate-400">
               {isAdmin
                 ? 'Welcome back to your Talent Operations Command Center.'
-                : `Welcome back to your creator workspace, ${influencer?.name || session.name}.`}
+                : `Welcome back to your creator workspace, ${influencer?.name || session.name || 'Creator'}.`}
             </p>
           </div>
 

@@ -24,7 +24,7 @@ export const NeedsAttentionBanner: React.FC<NeedsAttentionBannerProps> = ({ onSe
   );
 
   const pendingFollowUps = campaigns.filter(
-    c => c.paymentStatus === 'Pending' && c.followUps.length > 0
+    c => c.paymentStatus === 'Pending' && (c.followUps || []).length > 0
   );
 
   const totalAttentionCount =
