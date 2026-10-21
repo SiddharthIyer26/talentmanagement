@@ -708,6 +708,7 @@ class AuthService {
     bankDetails?: any;
     rateCard?: any;
     accountStatus?: 'active' | 'disabled';
+    avatarUrl?: string;
   }): Promise<{ success: boolean; message: string }> {
     const cleanEmail = infData.email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -736,7 +737,7 @@ class AuthService {
       name: infData.name.trim(),
       handle: infData.handle.startsWith('@') ? infData.handle.trim() : `@${infData.handle.trim()}`,
       city: infData.city?.trim() || 'India',
-      avatarUrl: existingObj?.avatarUrl || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80`,
+      avatarUrl: infData.avatarUrl || existingObj?.avatarUrl || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80`,
       bio: existingObj?.bio || 'Technology content creator and ecosystem product reviewer.',
       email: cleanEmail,
       phone: infData.phone?.trim() || '+91 98000 00000',
@@ -787,7 +788,8 @@ class AuthService {
             invoicePrefix: updatedRecord.invoicePrefix,
             bankDetails: updatedRecord.bankDetails,
             rateCard: updatedRecord.rateCard,
-            influencerId: targetId
+            influencerId: targetId,
+            avatarUrl: updatedRecord.avatarUrl
           }
         });
 

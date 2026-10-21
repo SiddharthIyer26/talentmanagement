@@ -18,14 +18,15 @@ import {
   Plus,
   X
 } from 'lucide-react';
-import { ImageCropModal } from '../common/ImageCropModal';
+import { ProfileImageUploadCrop } from '../common/ProfileImageUploadCrop';
+import { uploadProfileImage } from '../../services/imageStorage';
 
 export const InfluencersView: React.FC = () => {
   const [influencers, setInfluencers] = useState<Influencer[]>(db.getInfluencers());
   const [selectedInf, setSelectedInf] = useState<Influencer>(influencers[0] || null);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Influencer>(influencers[0] || ({} as Influencer));
-  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
@@ -38,6 +39,7 @@ export const InfluencersView: React.FC = () => {
     username: '',
     password: 'password123',
     invoicePrefix: '',
+    avatarUrl: '',
     reel: 75000,
     collabReel: 95000,
     storeVisitReel: 110000,
@@ -73,15 +75,29 @@ export const InfluencersView: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
     try {
-      await db.saveInfluencer(formData);
-      setSelectedInf(formData);
+      let finalAvatarUrl = formData.avatarUrl;
+      if (finalAvatarUrl && finalAvatarUrl.startsWith('data:')) {
+        finalAvatarUrl = await uploadProfileImage(formData.id, finalAvatarUrl);
+      }
+
+      const updatedRecord: Influencer = {
+        ...formData,
+        avatarUrl: finalAvatarUrl || formData.avatarUrl
+      };
+
+      await db.saveInfluencer(updatedRecord);
+      setSelectedInf(updatedRecord);
+      setFormData(updatedRecord);
       setIsEditing(false);
       refreshInfluencers();
       alert('Influencer profile updated successfully!');
     } catch (err: any) {
       console.error('Error saving influencer:', err);
       alert(`Error updating profile: ${err?.message || 'Database write rejected'}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -103,69 +119,84 @@ export const InfluencersView: React.FC = () => {
       return;
     }
 
-    const autoUsername = newInfData.username.trim() || newInfData.handle.replace(/[@\s]/g, '').toLowerCase();
-    const autoPrefix = (newInfData.invoicePrefix.trim() || newInfData.name.trim().slice(0, 2)).toUpperCase();
-    const email = newInfData.email.trim() || `${autoUsername}@iyer.tech`;
+    setIsSaving(true);
+    try {
+      const autoUsername = newInfData.username.trim() || newInfData.handle.replace(/[@\s]/g, '').toLowerCase();
+      const autoPrefix = (newInfData.invoicePrefix.trim() || newInfData.name.trim().slice(0, 2)).toUpperCase();
+      const email = newInfData.email.trim() || `${autoUsername}@iyer.tech`;
 
-    const res = await authService.provisionInfluencer({
-      name: newInfData.name.trim(),
-      handle: newInfData.handle.startsWith('@') ? newInfData.handle.trim() : `@${newInfData.handle.trim()}`,
-      city: newInfData.city.trim() || 'India',
-      email,
-      phone: newInfData.phone.trim() || '+91 98000 00000',
-      pan: newInfData.pan.trim().toUpperCase() || 'ABCDE1234F',
-      username: autoUsername,
-      password: newInfData.password.trim() || 'password123',
-      invoicePrefix: autoPrefix,
-      bankDetails: {
-        accountName: newInfData.accountName.trim() || `${newInfData.name.trim()} Media`,
-        bankName: newInfData.bankName.trim() || 'HDFC Bank',
-        accountNumber: newInfData.accountNumber.trim() || '998877665544',
-        ifsc: newInfData.ifsc.trim().toUpperCase() || 'HDFC0000123',
-        pan: newInfData.pan.trim().toUpperCase() || 'ABCDE1234F'
-      },
-      rateCard: {
-        reel: Number(newInfData.reel) || 75000,
-        collabReel: Number(newInfData.collabReel) || 95000,
-        storeVisitReel: Number(newInfData.storeVisitReel) || 110000,
-        ugcVideo: 50000,
-        story: 20000,
-        carousel: 35000,
-        adRights30d: 25000,
-        adRights90d: 60000,
-        adRights1y: 150000
+      let finalAvatarUrl = newInfData.avatarUrl;
+      if (finalAvatarUrl && finalAvatarUrl.startsWith('data:')) {
+        finalAvatarUrl = await uploadProfileImage(`inf-${Date.now()}`, finalAvatarUrl);
       }
-    });
 
-    alert(res.message);
-    if (res.success) {
-      setIsAddModalOpen(false);
-      refreshInfluencers();
-      const all = db.getInfluencers();
-      const found = all.find(i => i.email === email) || all[0];
-      if (found) {
-        setSelectedInf(found);
-        setFormData(found);
-      }
-      setNewInfData({
-        name: '',
-        handle: '',
-        city: 'Bengaluru, India',
-        email: '',
-        phone: '+91 98000 00000',
-        username: '',
-        password: 'password123',
-        invoicePrefix: '',
-        reel: 75000,
-        collabReel: 95000,
-        storeVisitReel: 110000,
-        accountName: '',
-        bankName: 'HDFC Bank',
-        accountNumber: '998877665544',
-        ifsc: 'HDFC0000123',
-        pan: 'ABCDE1234F',
-        address: 'Tech Park, India'
+      const res = await authService.provisionInfluencer({
+        name: newInfData.name.trim(),
+        handle: newInfData.handle.startsWith('@') ? newInfData.handle.trim() : `@${newInfData.handle.trim()}`,
+        city: newInfData.city.trim() || 'India',
+        email,
+        avatarUrl: finalAvatarUrl || undefined,
+        phone: newInfData.phone.trim() || '+91 98000 00000',
+        pan: newInfData.pan.trim().toUpperCase() || 'ABCDE1234F',
+        username: autoUsername,
+        password: newInfData.password.trim() || 'password123',
+        invoicePrefix: autoPrefix,
+        bankDetails: {
+          accountName: newInfData.accountName.trim() || `${newInfData.name.trim()} Media`,
+          bankName: newInfData.bankName.trim() || 'HDFC Bank',
+          accountNumber: newInfData.accountNumber.trim() || '998877665544',
+          ifsc: newInfData.ifsc.trim().toUpperCase() || 'HDFC0000123',
+          pan: newInfData.pan.trim().toUpperCase() || 'ABCDE1234F'
+        },
+        rateCard: {
+          reel: Number(newInfData.reel) || 75000,
+          collabReel: Number(newInfData.collabReel) || 95000,
+          storeVisitReel: Number(newInfData.storeVisitReel) || 110000,
+          ugcVideo: 50000,
+          story: 20000,
+          carousel: 35000,
+          adRights30d: 25000,
+          adRights90d: 60000,
+          adRights1y: 150000
+        }
       });
+
+      alert(res.message);
+      if (res.success) {
+        setIsAddModalOpen(false);
+        refreshInfluencers();
+        const all = db.getInfluencers();
+        const found = all.find(i => i.email === email) || all[0];
+        if (found) {
+          setSelectedInf(found);
+          setFormData(found);
+        }
+        setNewInfData({
+          name: '',
+          handle: '',
+          city: 'Bengaluru, India',
+          email: '',
+          phone: '+91 98000 00000',
+          username: '',
+          password: 'password123',
+          invoicePrefix: '',
+          avatarUrl: '',
+          reel: 75000,
+          collabReel: 95000,
+          storeVisitReel: 110000,
+          accountName: '',
+          bankName: 'HDFC Bank',
+          accountNumber: '998877665544',
+          ifsc: 'HDFC0000123',
+          pan: 'ABCDE1234F',
+          address: 'Tech Park, India'
+        });
+      }
+    } catch (err: any) {
+      console.error('Error creating influencer:', err);
+      alert(`Error creating influencer: ${err?.message || 'Database write rejected'}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -210,7 +241,14 @@ export const InfluencersView: React.FC = () => {
                   : 'bg-tech-card border-tech-border hover:border-slate-600'
               }`}
             >
-              <img src={inf.avatarUrl} alt={inf.name} className="w-10 h-10 rounded-lg object-cover" />
+              <img
+                src={inf.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80'}
+                alt={inf.name}
+                className="w-10 h-10 rounded-lg object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80';
+                }}
+              />
               <div className="min-w-0 flex-1">
                 <h4 className="font-bold text-slate-200 text-xs truncate">{inf.name}</h4>
                 <p className="text-[10px] text-cyan-400 font-mono truncate">{inf.handle}</p>
@@ -225,9 +263,12 @@ export const InfluencersView: React.FC = () => {
             <div className="flex items-start justify-between border-b border-tech-border pb-4">
               <div className="flex items-center space-x-4">
                 <img
-                  src={selectedInf.avatarUrl}
+                  src={selectedInf.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80'}
                   alt={selectedInf.name}
                   className="w-16 h-16 rounded-2xl object-cover border-2 border-cyan-400/50 shadow-lg shadow-cyan-500/20"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80';
+                  }}
                 />
                 <div>
                   <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -388,6 +429,15 @@ export const InfluencersView: React.FC = () => {
             ) : (
               /* Edit Form */
               <form onSubmit={handleSave} className="space-y-4 text-xs">
+                {/* Profile Photo Management */}
+                <ProfileImageUploadCrop
+                  currentImageUrl={formData.avatarUrl}
+                  onImageCropped={(croppedUrl) => setFormData(prev => ({ ...prev, avatarUrl: croppedUrl }))}
+                  onImageRemoved={() => setFormData(prev => ({ ...prev, avatarUrl: '' }))}
+                  label="Influencer Profile Image"
+                  disabled={isSaving}
+                />
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-slate-400 mb-1">Full Name</label>
@@ -530,9 +580,11 @@ export const InfluencersView: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-lg shadow-lg shadow-cyan-500/20"
+                    disabled={isSaving}
+                    className="px-5 py-2 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-bold rounded-lg shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-1.5"
                   >
-                    Save Changes
+                    {isSaving && <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />}
+                    <span>{isSaving ? 'Saving Changes...' : 'Save Changes'}</span>
                   </button>
                 </div>
               </form>
@@ -607,9 +659,23 @@ export const InfluencersView: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateInfluencer} className="space-y-4">
+              {/* Profile Image Section */}
+              <div className="bg-[#0b0f17] border border-tech-border rounded-xl p-4 space-y-3">
+                <h4 className="font-bold text-cyan-400 uppercase text-[10px] tracking-wider">
+                  1. Profile Photo
+                </h4>
+                <ProfileImageUploadCrop
+                  currentImageUrl={newInfData.avatarUrl}
+                  onImageCropped={(croppedUrl) => setNewInfData(prev => ({ ...prev, avatarUrl: croppedUrl }))}
+                  onImageRemoved={() => setNewInfData(prev => ({ ...prev, avatarUrl: '' }))}
+                  label="Upload & Crop Profile Picture"
+                  disabled={isSaving}
+                />
+              </div>
+
               {/* Profile Details */}
               <div className="bg-[#0b0f17] border border-tech-border rounded-xl p-4 space-y-3">
-                <h4 className="font-bold text-cyan-400 uppercase text-[10px] tracking-wider">1. Creator Profile Information</h4>
+                <h4 className="font-bold text-cyan-400 uppercase text-[10px] tracking-wider">2. Creator Profile Information</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-400 mb-1">Creator Name *</label>
@@ -680,7 +746,7 @@ export const InfluencersView: React.FC = () => {
 
               {/* Portal Login Credentials */}
               <div className="bg-[#0b0f17] border border-tech-border rounded-xl p-4 space-y-3">
-                <h4 className="font-bold text-indigo-400 uppercase text-[10px] tracking-wider">2. Influencer Portal Login Credentials</h4>
+                <h4 className="font-bold text-indigo-400 uppercase text-[10px] tracking-wider">3. Influencer Portal Login Credentials</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-400 mb-1">Login Username</label>
@@ -706,7 +772,7 @@ export const InfluencersView: React.FC = () => {
 
               {/* Commercial Rate Card */}
               <div className="bg-[#0b0f17] border border-tech-border rounded-xl p-4 space-y-3">
-                <h4 className="font-bold text-emerald-400 uppercase text-[10px] tracking-wider">3. Commercial Rate Card (INR ₹)</h4>
+                <h4 className="font-bold text-emerald-400 uppercase text-[10px] tracking-wider">4. Commercial Rate Card (INR ₹)</h4>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-slate-400 mb-1">Single Reel (₹)</label>
@@ -740,7 +806,7 @@ export const InfluencersView: React.FC = () => {
 
               {/* Banking & Tax Details */}
               <div className="bg-[#0b0f17] border border-tech-border rounded-xl p-4 space-y-3">
-                <h4 className="font-bold text-amber-400 uppercase text-[10px] tracking-wider">4. Bank & Tax Information</h4>
+                <h4 className="font-bold text-amber-400 uppercase text-[10px] tracking-wider">5. Bank & Tax Information</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-400 mb-1">Account Holder Name</label>
@@ -816,9 +882,11 @@ export const InfluencersView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
+                  disabled={isSaving}
+                  className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex items-center gap-2"
                 >
-                  Create Influencer Account
+                  {isSaving && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  <span>{isSaving ? 'Creating Influencer & Syncing Cloud...' : 'Create Influencer Account'}</span>
                 </button>
               </div>
             </form>
