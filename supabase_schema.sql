@@ -127,10 +127,12 @@ BEGIN
 
   RETURN EXISTS (
     SELECT 1 FROM public.management_users
-    WHERE LOWER(email) = LOWER(current_email) AND account_status = 'active'
+    WHERE LOWER(TRIM(email)) = LOWER(TRIM(current_email))
+      AND COALESCE(account_status, 'active') = 'active'
   );
 END;
 $$;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated, anon, service_role;
 
 CREATE OR REPLACE FUNCTION public.current_influencer_id()
 RETURNS TEXT
@@ -156,21 +158,22 @@ BEGIN
   current_email := coalesce(auth.email(), auth.jwt()->>'email', '');
   IF current_email <> '' THEN
     SELECT id INTO inf_id FROM public.influencers
-    WHERE LOWER(email) = LOWER(current_email) AND account_status = 'active'
+    WHERE LOWER(TRIM(email)) = LOWER(TRIM(current_email))
+      AND COALESCE(account_status, 'active') = 'active'
     LIMIT 1;
   END IF;
 
   RETURN coalesce(inf_id, '');
 END;
 $$;
+GRANT EXECUTE ON FUNCTION public.current_influencer_id() TO authenticated, anon, service_role;
 
 -- Secure helper function for authenticated users to safely resolve their own management profile
 CREATE OR REPLACE FUNCTION public.get_current_management_user()
 RETURNS SETOF public.management_users
 LANGUAGE plpgsql
-SECURITY DEFINER
+STABLE SECURITY DEFINER
 SET search_path = public, auth
-STABLE
 AS $$
 DECLARE
   current_email TEXT;
@@ -182,11 +185,12 @@ BEGIN
 
   RETURN QUERY
   SELECT * FROM public.management_users
-  WHERE LOWER(email) = LOWER(current_email) AND account_status = 'active'
+  WHERE LOWER(TRIM(email)) = LOWER(TRIM(current_email))
+    AND COALESCE(account_status, 'active') = 'active'
   LIMIT 1;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION public.get_current_management_user() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_current_management_user() TO authenticated, service_role;
 
 -- Secure helper function for authenticated users to safely resolve their own influencer profile
 CREATE OR REPLACE FUNCTION public.get_current_influencer_user()
@@ -201,30 +205,30 @@ DECLARE
   target_id TEXT;
 BEGIN
   target_id := public.current_influencer_id();
-  IF target_id <> '' THEN
+  IF target_id IS NOT NULL AND target_id <> '' THEN
     RETURN QUERY
     SELECT * FROM public.influencers
-    WHERE id = target_id AND account_status = 'active'
+    WHERE id = target_id AND COALESCE(account_status, 'active') = 'active'
     LIMIT 1;
     IF FOUND THEN
       RETURN;
     END IF;
   END IF;
 
-  current_email := coalesce(auth.email(), auth.jwt()->>'email', '');
+  current_email := COALESCE(auth.email(), auth.jwt()->>'email', '');
   IF current_email = '' THEN
     RETURN;
   END IF;
 
   RETURN QUERY
   SELECT * FROM public.influencers
-  WHERE LOWER(email) = LOWER(current_email) AND account_status = 'active'
+  WHERE LOWER(TRIM(email)) = LOWER(TRIM(current_email)) AND COALESCE(account_status, 'active') = 'active'
   LIMIT 1;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION public.get_current_influencer_user() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_current_influencer_user() TO authenticated, service_role;
 
--- Resolves username or handle to user email for Supabase Auth signInWithPassword
+-- Resolves username, handle, or email to user email for Supabase Auth signInWithPassword
 CREATE OR REPLACE FUNCTION public.resolve_login_email(p_identifier TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -233,43 +237,81 @@ SET search_path = public, auth
 STABLE
 AS $$
 DECLARE
+  v_input TEXT;
   v_clean TEXT;
+  v_stripped TEXT;
   v_email TEXT;
 BEGIN
-  v_clean := LOWER(TRIM(p_identifier));
-  IF v_clean = '' THEN
+  IF p_identifier IS NULL THEN
     RETURN NULL;
   END IF;
 
-  -- 1. If it's already an email, verify existence and active status
-  IF v_clean LIKE '%@%' THEN
-    SELECT email INTO v_email FROM public.management_users WHERE LOWER(email) = v_clean AND account_status = 'active' LIMIT 1;
-    IF v_email IS NOT NULL THEN RETURN v_email; END IF;
-
-    SELECT email INTO v_email FROM public.influencers WHERE LOWER(email) = v_clean AND account_status = 'active' LIMIT 1;
-    IF v_email IS NOT NULL THEN RETURN v_email; END IF;
-
-    RETURN v_clean;
+  v_input := TRIM(p_identifier);
+  IF v_input = '' THEN
+    RETURN NULL;
   END IF;
 
-  -- 2. Resolve management_users by username
-  SELECT email INTO v_email FROM public.management_users
-  WHERE LOWER(username) = v_clean AND account_status = 'active'
-  LIMIT 1;
-  IF v_email IS NOT NULL THEN RETURN v_email; END IF;
+  v_clean := LOWER(v_input);
+  v_stripped := REGEXP_REPLACE(v_clean, '^@+', '');
 
-  -- 3. Resolve influencers by username or handle (strip leading '@')
-  v_clean := REGEXP_REPLACE(v_clean, '^@', '');
-  SELECT email INTO v_email FROM public.influencers
-  WHERE (LOWER(username) = v_clean OR LOWER(REGEXP_REPLACE(handle, '^@', '')) = v_clean)
-    AND account_status = 'active'
+  -- 1. Exact match on management_users (email, username, or stripped username)
+  SELECT email INTO v_email
+  FROM public.management_users
+  WHERE COALESCE(account_status, 'active') = 'active'
+    AND (
+      LOWER(TRIM(email)) = v_clean
+      OR LOWER(TRIM(username)) = v_clean
+      OR LOWER(TRIM(username)) = v_stripped
+    )
   LIMIT 1;
-  IF v_email IS NOT NULL THEN RETURN v_email; END IF;
+
+  IF v_email IS NOT NULL THEN
+    RETURN v_email;
+  END IF;
+
+  -- 2. Exact match on influencers (email, username, handle, or stripped handle)
+  SELECT email INTO v_email
+  FROM public.influencers
+  WHERE COALESCE(account_status, 'active') = 'active'
+    AND (
+      LOWER(TRIM(email)) = v_clean
+      OR LOWER(TRIM(COALESCE(username, ''))) = v_clean
+      OR LOWER(TRIM(COALESCE(username, ''))) = v_stripped
+      OR LOWER(TRIM(COALESCE(handle, ''))) = v_clean
+      OR LOWER(TRIM(REGEXP_REPLACE(COALESCE(handle, ''), '^@+', ''))) = v_stripped
+    )
+  LIMIT 1;
+
+  IF v_email IS NOT NULL THEN
+    RETURN v_email;
+  END IF;
+
+  -- 3. Fallback to auth.users raw_user_meta_data
+  SELECT email INTO v_email
+  FROM auth.users
+  WHERE deleted_at IS NULL
+    AND (
+      LOWER(TRIM(email)) = v_clean
+      OR LOWER(TRIM(COALESCE(raw_user_meta_data->>'username', ''))) = v_clean
+      OR LOWER(TRIM(COALESCE(raw_user_meta_data->>'username', ''))) = v_stripped
+      OR LOWER(TRIM(COALESCE(raw_user_meta_data->>'handle', ''))) = v_clean
+      OR LOWER(TRIM(REGEXP_REPLACE(COALESCE(raw_user_meta_data->>'handle', ''), '^@+', ''))) = v_stripped
+    )
+  LIMIT 1;
+
+  IF v_email IS NOT NULL THEN
+    RETURN v_email;
+  END IF;
+
+  -- 4. If it looks like a valid email address format, return it directly so Supabase Auth can authenticate/verify
+  IF v_clean ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN
+    RETURN v_clean;
+  END IF;
 
   RETURN NULL;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION public.resolve_login_email(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.resolve_login_email(TEXT) TO anon, authenticated, service_role;
 
 -- (Authentication provisioning and password updates are handled exclusively via Supabase Edge Functions with Supabase Auth Admin API)
 

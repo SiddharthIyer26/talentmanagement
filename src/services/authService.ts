@@ -621,6 +621,11 @@ class AuthService {
       return { success: false, message: 'A valid email address is required.' };
     }
 
+    const cleanUsername = userData.username.trim().toLowerCase();
+    if (!cleanUsername) {
+      return { success: false, message: 'A valid username is required.' };
+    }
+
     // Check duplicate email in other accounts
     const allMgmt = db.getManagementUsers();
     const existingMgmt = allMgmt.find(u => u.email.toLowerCase() === cleanEmail && u.id !== userData.id);
@@ -632,6 +637,22 @@ class AuthService {
     const existingInf = allInf.find(i => i.email && i.email.toLowerCase() === cleanEmail);
     if (existingInf) {
       return { success: false, message: 'An influencer account already exists with this email address.' };
+    }
+
+    // Check duplicate username in management users
+    const duplicateMgmtUser = allMgmt.find(u => (u.username || '').trim().toLowerCase() === cleanUsername && u.id !== userData.id);
+    if (duplicateMgmtUser) {
+      return { success: false, message: 'This username is already taken by another management user.' };
+    }
+
+    // Check duplicate username in influencers
+    const duplicateInfUser = allInf.find(i => {
+      const u = (i.username || '').trim().toLowerCase();
+      const h = (i.handle || '').trim().toLowerCase().replace(/^@+/, '');
+      return u === cleanUsername || h === cleanUsername;
+    });
+    if (duplicateInfUser) {
+      return { success: false, message: 'This username is already taken by an influencer account.' };
     }
 
     const targetId = userData.id || 'mgmt-' + Date.now();
@@ -723,6 +744,12 @@ class AuthService {
       return { success: false, message: 'A valid email address is required.' };
     }
 
+    const cleanUsername = infData.username.trim().toLowerCase();
+    const cleanHandle = infData.handle.trim().toLowerCase().replace(/^@+/, '');
+    if (!cleanUsername) {
+      return { success: false, message: 'A valid username is required.' };
+    }
+
     // Check duplicate email
     const allInf = db.getInfluencers();
     const existingInf = allInf.find(i => i.email && i.email.toLowerCase() === cleanEmail && i.id !== infData.id);
@@ -734,6 +761,23 @@ class AuthService {
     const existingMgmt = allMgmt.find(u => u.email.toLowerCase() === cleanEmail);
     if (existingMgmt) {
       return { success: false, message: 'A management user already exists with this email address.' };
+    }
+
+    // Check duplicate username in influencers
+    const duplicateInf = allInf.find(i => {
+      if (i.id === infData.id) return false;
+      const u = (i.username || '').trim().toLowerCase();
+      const h = (i.handle || '').trim().toLowerCase().replace(/^@+/, '');
+      return u === cleanUsername || h === cleanUsername || (cleanHandle && (u === cleanHandle || h === cleanHandle));
+    });
+    if (duplicateInf) {
+      return { success: false, message: 'This username or handle is already in use by another influencer.' };
+    }
+
+    // Check duplicate username in management users
+    const duplicateMgmt = allMgmt.find(u => (u.username || '').trim().toLowerCase() === cleanUsername || (cleanHandle && (u.username || '').trim().toLowerCase() === cleanHandle));
+    if (duplicateMgmt) {
+      return { success: false, message: 'This username is already in use by a management user.' };
     }
 
     const targetId = infData.id || 'inf-' + Date.now();
@@ -775,9 +819,6 @@ class AuthService {
       },
       monthlyInsightsSnapshots: existingObj?.monthlyInsightsSnapshots || []
     };
-
-    // Save to local DB first
-    db.saveInfluencer(updatedRecord);
 
     // Call Supabase Edge Function to provision in Supabase Auth & cloud table
     if (isSupabaseConfigured() && supabase) {
