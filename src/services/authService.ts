@@ -120,7 +120,7 @@ class AuthService {
 
       // Fallback: check local memory if cloud table hasn't synced this email yet
       if (!mgmtUser) {
-        const localMgmt = db.getManagementUsers().find(u => u.email.toLowerCase() === authEmail);
+        const localMgmt = db.getManagementUsers().find(u => (u.email || '').trim().toLowerCase() === authEmail);
         if (localMgmt) {
           mgmtUser = {
             id: localMgmt.id,
@@ -196,7 +196,7 @@ class AuthService {
 
       // Fallback: check local memory if cloud table hasn't synced this email yet
       if (!infUser) {
-        const localInf = db.getInfluencers().find(inf => inf.email && inf.email.toLowerCase() === authEmail);
+        const localInf = db.getInfluencers().find(inf => inf.email && (inf.email || '').trim().toLowerCase() === authEmail);
         if (localInf) {
           infUser = {
             id: localInf.id,
@@ -258,60 +258,83 @@ class AuthService {
    * Tries cloud RPC first, then local database fallback.
    */
   public async resolveUsernameToEmail(identifier: string): Promise<string | null> {
-    const clean = identifier.trim().toLowerCase();
-    if (!clean) return null;
+    const raw = (identifier || '').trim();
+    if (!raw) return null;
     
     // An email has '@' but does NOT start with '@'
-    if (!clean.startsWith('@') && clean.includes('@')) return clean;
-    const cleanHandle = clean.replace(/^@/, '');
+    if (!raw.startsWith('@') && raw.includes('@')) return raw.toLowerCase();
+    const clean = raw.toLowerCase();
+    const cleanHandle = clean.replace(/^@+/, '');
 
-    // Explicit deterministic mapping for core system users
-    if (clean === 'admin') {
-      return 'admin@iyer.tech';
-    }
-    if (clean === 'siddharth') {
-      return 'siddharthiyer.work@gmail.com';
-    }
-    if (clean === 'jdtech' || cleanHandle === 'jdtech' || cleanHandle === 'jdtech_official') {
-      return 'collabs@jdtech.in';
-    }
-
-    // 1. Try Supabase RPC helper
+    // 1. Try Supabase RPC helper (if available in schema)
     if (isSupabaseConfigured() && supabase) {
       try {
         const { data: rpcEmail, error: rpcErr } = await supabase.rpc('resolve_login_email', {
           p_identifier: clean
         });
         if (!rpcErr && rpcEmail && typeof rpcEmail === 'string' && rpcEmail.includes('@')) {
-          const lowerRpc = rpcEmail.toLowerCase();
-          if (clean !== 'admin' || lowerRpc !== 'siddharthiyer.work@gmail.com') {
-            return lowerRpc;
-          }
+          return rpcEmail.toLowerCase().trim();
         }
       } catch {
-        // Fall back to local storage
+        // Fall back to table queries and authoritative local records
+      }
+
+      // 2. Try direct Supabase query if permissions allow
+      try {
+        const { data: mgmtData } = await supabase
+          .from('management_users')
+          .select('email')
+          .ilike('username', clean)
+          .maybeSingle();
+
+        if (mgmtData && mgmtData.email) {
+          return mgmtData.email.toLowerCase().trim();
+        }
+
+        const { data: infData } = await supabase
+          .from('influencers')
+          .select('email')
+          .or(`username.ilike.${clean},handle.ilike.@${cleanHandle},handle.ilike.${cleanHandle}`)
+          .maybeSingle();
+
+        if (infData && infData.email) {
+          return infData.email.toLowerCase().trim();
+        }
+      } catch {
+        // Fall back to authoritative local records
       }
     }
 
-    // 2. Fallback: Check local management users
+    // 3. Resolve against authoritative existing account records
+    // Management users (normalize whitespace and casing)
     const mgmtUsers = db.getManagementUsers();
-    const mgmtMatch = mgmtUsers.find(
-      u => (u.username.toLowerCase() === clean || u.username.toLowerCase() === cleanHandle || u.email.toLowerCase() === clean)
-           && (clean !== 'admin' || u.email.toLowerCase() !== 'siddharthiyer.work@gmail.com')
-    );
+    const mgmtMatch = mgmtUsers.find(u => {
+      const uUser = (u.username || '').trim().toLowerCase();
+      const uEmail = (u.email || '').trim().toLowerCase();
+      return uUser === clean || uUser === cleanHandle || uEmail === clean;
+    });
     if (mgmtMatch && mgmtMatch.email) {
-      return mgmtMatch.email.toLowerCase();
+      return mgmtMatch.email.trim().toLowerCase();
     }
 
-    // 3. Fallback: Check local influencers
+    // Influencer creators (normalize whitespace, casing, and handle '@' prefix)
     const influencers = db.getInfluencers();
     const infMatch = influencers.find(inf => {
-      const infHandleWithoutAt = inf.handle.replace(/^@/, '').toLowerCase();
-      const infUser = (inf.username || '').toLowerCase();
-      return cleanHandle === infHandleWithoutAt || cleanHandle === infUser || clean === inf.handle.toLowerCase();
+      const infUser = (inf.username || '').trim().toLowerCase();
+      const infHandleRaw = (inf.handle || '').trim().toLowerCase();
+      const infHandleClean = infHandleRaw.replace(/^@+/, '');
+      const infEmail = (inf.email || '').trim().toLowerCase();
+
+      return (
+        clean === infUser ||
+        cleanHandle === infUser ||
+        clean === infHandleRaw ||
+        cleanHandle === infHandleClean ||
+        clean === infEmail
+      );
     });
     if (infMatch && infMatch.email) {
-      return infMatch.email.toLowerCase();
+      return infMatch.email.trim().toLowerCase();
     }
 
     return null;
@@ -341,31 +364,22 @@ class AuthService {
 
     // Resolve target email if user entered a username or handle
     let targetEmail = cleanInput.toLowerCase();
-    let isKnownWorkspaceAccount = false;
     const isDirectEmail = !cleanInput.startsWith('@') && cleanInput.includes('@');
 
     if (!isDirectEmail) {
       const resolved = await this.resolveUsernameToEmail(cleanInput);
       if (resolved) {
         targetEmail = resolved;
-        isKnownWorkspaceAccount = true;
       } else {
         return {
           success: false,
-          message: 'Username not recognized. Please check your username or enter your registered email address.'
+          message: 'Invalid username/email or password. Please verify your credentials.'
         };
-      }
-    } else {
-      // Check if email exists in local records
-      const mgmt = db.getManagementUsers().find(u => u.email.toLowerCase() === targetEmail);
-      const inf = db.getInfluencers().find(i => i.email && i.email.toLowerCase() === targetEmail);
-      if (mgmt || inf) {
-        isKnownWorkspaceAccount = true;
       }
     }
 
-    // Check pre-auth disabled status if found in local records
-    const localMgmt = db.getManagementUsers().find(u => u.email.toLowerCase() === targetEmail);
+    // Check pre-auth disabled status if found in authoritative records
+    const localMgmt = db.getManagementUsers().find(u => (u.email || '').trim().toLowerCase() === targetEmail);
     if (localMgmt && localMgmt.accountStatus === 'disabled') {
       return {
         success: false,
@@ -373,7 +387,7 @@ class AuthService {
       };
     }
 
-    const localInf = db.getInfluencers().find(i => i.email && i.email.toLowerCase() === targetEmail);
+    const localInf = db.getInfluencers().find(i => i.email && (i.email || '').trim().toLowerCase() === targetEmail);
     if (localInf && localInf.accountStatus === 'disabled') {
       return {
         success: false,
@@ -393,15 +407,9 @@ class AuthService {
         const errCode = (authErr as any)?.code || '';
 
         if (errCode === 'invalid_credentials' || errMsg.toLowerCase().includes('invalid login credentials')) {
-          if (isKnownWorkspaceAccount) {
-            return {
-              success: false,
-              message: 'Invalid password. Please check your password and try again.'
-            };
-          }
           return {
             success: false,
-            message: 'Invalid email or password. Please verify your credentials.'
+            message: 'Invalid username/email or password. Please verify your credentials.'
           };
         }
 
@@ -453,7 +461,7 @@ class AuthService {
 
       // Fallback: check local memory if cloud table hasn't synced this email yet
       if (!mgmtUser) {
-        const localMgmtUser = db.getManagementUsers().find(u => u.email.toLowerCase() === authenticatedEmail);
+        const localMgmtUser = db.getManagementUsers().find(u => (u.email || '').trim().toLowerCase() === authenticatedEmail);
         if (localMgmtUser) {
           mgmtUser = {
             id: localMgmtUser.id,
@@ -534,7 +542,7 @@ class AuthService {
 
       // Fallback: check local memory if cloud table hasn't synced this email yet
       if (!infUser) {
-        const localInfUser = db.getInfluencers().find(i => i.email && i.email.toLowerCase() === authenticatedEmail);
+        const localInfUser = db.getInfluencers().find(i => i.email && (i.email || '').trim().toLowerCase() === authenticatedEmail);
         if (localInfUser) {
           infUser = {
             id: localInfUser.id,
@@ -805,10 +813,17 @@ class AuthService {
         } else if (edgeData && !edgeData.success) {
           return { success: false, message: edgeData.message || 'Failed to provision influencer in Supabase Auth.' };
         }
+
+        if (edgeData?.profileId) {
+          updatedRecord.id = edgeData.profileId;
+        }
       } catch (err: any) {
         return { success: false, message: err.message || 'Error provisioning creator account.' };
       }
     }
+
+    // Save to local & cloud DB upon successful provisioning
+    await db.saveInfluencer(updatedRecord);
 
     return {
       success: true,
