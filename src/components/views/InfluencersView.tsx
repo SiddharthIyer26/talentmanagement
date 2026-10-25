@@ -67,6 +67,14 @@ export const InfluencersView: React.FC = () => {
     }
   };
 
+  // Realtime & Cloud sync subscription
+  React.useEffect(() => {
+    const unsub = db.subscribe(() => {
+      refreshInfluencers();
+    });
+    return unsub;
+  }, []);
+
   const handleSelect = (inf: Influencer) => {
     setSelectedInf(inf);
     setFormData(inf);
@@ -84,7 +92,28 @@ export const InfluencersView: React.FC = () => {
 
       const updatedRecord: Influencer = {
         ...formData,
-        avatarUrl: finalAvatarUrl || formData.avatarUrl
+        avatarUrl: finalAvatarUrl || formData.avatarUrl,
+        address: formData.address || '',
+        bankDetails: {
+          ...(formData.bankDetails || {}),
+          accountName: formData.bankDetails?.accountName || '',
+          bankName: formData.bankDetails?.bankName || '',
+          accountNumber: formData.bankDetails?.accountNumber || '',
+          ifsc: formData.bankDetails?.ifsc || '',
+          pan: formData.bankDetails?.pan || formData.pan || ''
+        },
+        rateCard: {
+          ...(formData.rateCard || {}),
+          reel: Number(formData.rateCard?.reel || 0),
+          collabReel: Number(formData.rateCard?.collabReel || 0),
+          storeVisitReel: Number(formData.rateCard?.storeVisitReel || 0),
+          ugcVideo: Number(formData.rateCard?.ugcVideo || 0),
+          story: Number(formData.rateCard?.story || 0),
+          carousel: Number(formData.rateCard?.carousel || 0),
+          adRights30d: Number(formData.rateCard?.adRights30d || 0),
+          adRights90d: Number(formData.rateCard?.adRights90d || 0),
+          adRights1y: Number(formData.rateCard?.adRights1y || 0)
+        }
       };
 
       await db.saveInfluencer(updatedRecord);
@@ -288,7 +317,12 @@ export const InfluencersView: React.FC = () => {
               {isAdmin && (
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setIsEditing(!isEditing)}
+                    onClick={() => {
+                      if (!isEditing && selectedInf) {
+                        setFormData(selectedInf);
+                      }
+                      setIsEditing(!isEditing);
+                    }}
                     className="px-3 py-1.5 bg-tech-border hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
                   >
                     <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
@@ -316,7 +350,7 @@ export const InfluencersView: React.FC = () => {
                     </h4>
                     <p className="text-slate-300 leading-relaxed">{selectedInf.bio}</p>
                     <p className="text-slate-400 pt-2 border-t border-tech-border">
-                      <strong className="text-slate-300">Registered Address:</strong> {selectedInf.address}
+                      <strong className="text-slate-300">Address:</strong> {selectedInf.address}
                     </p>
                   </div>
 
@@ -344,19 +378,19 @@ export const InfluencersView: React.FC = () => {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div>
                       <span className="text-[10px] text-slate-500 block">Account Holder</span>
-                      <span className="font-semibold text-slate-200">{selectedInf.bankDetails.accountName}</span>
+                      <span className="font-semibold text-slate-200">{selectedInf.bankDetails?.accountName || '—'}</span>
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-500 block">Bank Name</span>
-                      <span className="font-semibold text-slate-200">{selectedInf.bankDetails.bankName}</span>
+                      <span className="font-semibold text-slate-200">{selectedInf.bankDetails?.bankName || '—'}</span>
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-500 block">Account Number</span>
-                      <span className="font-semibold font-mono text-cyan-400">{selectedInf.bankDetails.accountNumber}</span>
+                      <span className="font-semibold font-mono text-cyan-400">{selectedInf.bankDetails?.accountNumber || '—'}</span>
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-500 block">IFSC Code</span>
-                      <span className="font-semibold font-mono text-slate-200">{selectedInf.bankDetails.ifsc}</span>
+                      <span className="font-semibold font-mono text-slate-200">{selectedInf.bankDetails?.ifsc || '—'}</span>
                     </div>
                   </div>
                 </div>
@@ -371,56 +405,56 @@ export const InfluencersView: React.FC = () => {
                     <div className="bg-tech-card p-2.5 rounded-lg border border-tech-border">
                       <span className="text-[10px] text-slate-400 block">Reel</span>
                       <span className="font-extrabold text-slate-100 font-mono">
-                        ₹{selectedInf.rateCard.reel.toLocaleString('en-IN')}
+                        ₹{(selectedInf.rateCard?.reel || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
 
                     <div className="bg-tech-card p-2.5 rounded-lg border border-tech-border">
                       <span className="text-[10px] text-slate-400 block">Collab Reel</span>
                       <span className="font-extrabold text-cyan-400 font-mono">
-                        ₹{selectedInf.rateCard.collabReel.toLocaleString('en-IN')}
+                        ₹{(selectedInf.rateCard?.collabReel || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
 
                     <div className="bg-tech-card p-2.5 rounded-lg border border-tech-border">
                       <span className="text-[10px] text-slate-400 block">Store Visit Reel</span>
                       <span className="font-extrabold text-indigo-400 font-mono">
-                        ₹{selectedInf.rateCard.storeVisitReel.toLocaleString('en-IN')}
+                        ₹{(selectedInf.rateCard?.storeVisitReel || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
 
                     <div className="bg-tech-card p-2.5 rounded-lg border border-tech-border">
                       <span className="text-[10px] text-slate-400 block">UGC Video</span>
                       <span className="font-extrabold text-emerald-400 font-mono">
-                        ₹{selectedInf.rateCard.ugcVideo.toLocaleString('en-IN')}
+                        ₹{(selectedInf.rateCard?.ugcVideo || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
 
                     <div className="bg-tech-card p-2.5 rounded-lg border border-tech-border">
                       <span className="text-[10px] text-slate-400 block">Story</span>
                       <span className="font-extrabold text-amber-400 font-mono">
-                        ₹{selectedInf.rateCard.story.toLocaleString('en-IN')}
+                        ₹{(selectedInf.rateCard?.story || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
 
                     <div className="bg-tech-card p-2.5 rounded-lg border border-tech-border">
                       <span className="text-[10px] text-slate-400 block">Carousel</span>
                       <span className="font-extrabold text-violet-400 font-mono">
-                        ₹{selectedInf.rateCard.carousel.toLocaleString('en-IN')}
+                        ₹{(selectedInf.rateCard?.carousel || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
 
                     <div className="bg-tech-card p-2.5 rounded-lg border border-tech-border">
                       <span className="text-[10px] text-slate-400 block">Ad Rights 30d</span>
                       <span className="font-extrabold text-pink-400 font-mono">
-                        ₹{selectedInf.rateCard.adRights30d.toLocaleString('en-IN')}
+                        ₹{(selectedInf.rateCard?.adRights30d || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
 
                     <div className="bg-tech-card p-2.5 rounded-lg border border-tech-border">
                       <span className="text-[10px] text-slate-400 block">Ad Rights 90d</span>
                       <span className="font-extrabold text-cyan-300 font-mono">
-                        ₹{selectedInf.rateCard.adRights90d.toLocaleString('en-IN')}
+                        ₹{(selectedInf.rateCard?.adRights90d || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>
@@ -505,28 +539,141 @@ export const InfluencersView: React.FC = () => {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-slate-400 mb-1">Creator Bio</label>
-                  <textarea
-                    rows={2}
-                    value={formData.bio}
-                    onChange={e => setFormData({ ...formData, bio: e.target.value })}
-                    className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200"
-                  />
+                {/* Creator Bio & Address */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 mb-1">Creator Bio</label>
+                    <textarea
+                      rows={2}
+                      value={formData.bio || ''}
+                      onChange={e => setFormData({ ...formData, bio: e.target.value })}
+                      className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200"
+                      placeholder="About / Creator Bio"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Address</label>
+                    <textarea
+                      rows={2}
+                      value={formData.address || ''}
+                      onChange={e => setFormData({ ...formData, address: e.target.value })}
+                      className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200"
+                      placeholder="Suite / Street, City, State, PIN"
+                    />
+                  </div>
+                </div>
+
+                {/* Bank Details Edit */}
+                <div className="p-3 bg-[#0b0f17] rounded-xl border border-tech-border space-y-2">
+                  <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5 text-cyan-400" /> Edit Bank & Payout Remittance Details
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <div>
+                      <label className="block text-slate-500 text-[10px]">Account Holder Name</label>
+                      <input
+                        type="text"
+                        value={formData.bankDetails?.accountName || ''}
+                        onChange={e => setFormData({
+                          ...formData,
+                          bankDetails: {
+                            ...(formData.bankDetails || {
+                              accountName: '',
+                              bankName: '',
+                              accountNumber: '',
+                              ifsc: '',
+                              pan: formData.pan || ''
+                            }),
+                            accountName: e.target.value
+                          }
+                        })}
+                        className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200"
+                        placeholder="Account Holder Name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-[10px]">Bank Name</label>
+                      <input
+                        type="text"
+                        value={formData.bankDetails?.bankName || ''}
+                        onChange={e => setFormData({
+                          ...formData,
+                          bankDetails: {
+                            ...(formData.bankDetails || {
+                              accountName: '',
+                              bankName: '',
+                              accountNumber: '',
+                              ifsc: '',
+                              pan: formData.pan || ''
+                            }),
+                            bankName: e.target.value
+                          }
+                        })}
+                        className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200"
+                        placeholder="Bank Name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-[10px]">Account Number</label>
+                      <input
+                        type="text"
+                        value={formData.bankDetails?.accountNumber || ''}
+                        onChange={e => setFormData({
+                          ...formData,
+                          bankDetails: {
+                            ...(formData.bankDetails || {
+                              accountName: '',
+                              bankName: '',
+                              accountNumber: '',
+                              ifsc: '',
+                              pan: formData.pan || ''
+                            }),
+                            accountNumber: e.target.value
+                          }
+                        })}
+                        className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-cyan-400 font-mono"
+                        placeholder="Account Number"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-[10px]">IFSC Code</label>
+                      <input
+                        type="text"
+                        value={formData.bankDetails?.ifsc || ''}
+                        onChange={e => setFormData({
+                          ...formData,
+                          bankDetails: {
+                            ...(formData.bankDetails || {
+                              accountName: '',
+                              bankName: '',
+                              accountNumber: '',
+                              ifsc: '',
+                              pan: formData.pan || ''
+                            }),
+                            ifsc: e.target.value.toUpperCase()
+                          }
+                        })}
+                        className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono uppercase"
+                        placeholder="IFSC Code"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Rate Card Edit */}
                 <div className="p-3 bg-[#0b0f17] rounded-xl border border-tech-border space-y-2">
-                  <span className="font-bold text-slate-300 block">Edit Commercial Rates (₹)</span>
+                  <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                    <IndianRupee className="w-3.5 h-3.5 text-amber-400" /> Edit Commercial Rates (₹)
+                  </span>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div>
                       <label className="block text-slate-500 text-[10px]">Reel (₹)</label>
                       <input
                         type="number"
-                        value={formData.rateCard.reel}
+                        value={formData.rateCard?.reel ?? ''}
                         onChange={e => setFormData({
                           ...formData,
-                          rateCard: { ...formData.rateCard, reel: Number(e.target.value) }
+                          rateCard: { ...(formData.rateCard || {}), reel: Number(e.target.value) }
                         })}
                         className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono"
                       />
@@ -535,10 +682,10 @@ export const InfluencersView: React.FC = () => {
                       <label className="block text-slate-500 text-[10px]">Collab Reel (₹)</label>
                       <input
                         type="number"
-                        value={formData.rateCard.collabReel}
+                        value={formData.rateCard?.collabReel ?? ''}
                         onChange={e => setFormData({
                           ...formData,
-                          rateCard: { ...formData.rateCard, collabReel: Number(e.target.value) }
+                          rateCard: { ...(formData.rateCard || {}), collabReel: Number(e.target.value) }
                         })}
                         className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono"
                       />
@@ -547,10 +694,22 @@ export const InfluencersView: React.FC = () => {
                       <label className="block text-slate-500 text-[10px]">Store Visit Reel (₹)</label>
                       <input
                         type="number"
-                        value={formData.rateCard.storeVisitReel}
+                        value={formData.rateCard?.storeVisitReel ?? ''}
                         onChange={e => setFormData({
                           ...formData,
-                          rateCard: { ...formData.rateCard, storeVisitReel: Number(e.target.value) }
+                          rateCard: { ...(formData.rateCard || {}), storeVisitReel: Number(e.target.value) }
+                        })}
+                        className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-[10px]">UGC Video (₹)</label>
+                      <input
+                        type="number"
+                        value={formData.rateCard?.ugcVideo ?? ''}
+                        onChange={e => setFormData({
+                          ...formData,
+                          rateCard: { ...(formData.rateCard || {}), ugcVideo: Number(e.target.value) }
                         })}
                         className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono"
                       />
@@ -559,10 +718,46 @@ export const InfluencersView: React.FC = () => {
                       <label className="block text-slate-500 text-[10px]">Story (₹)</label>
                       <input
                         type="number"
-                        value={formData.rateCard.story}
+                        value={formData.rateCard?.story ?? ''}
                         onChange={e => setFormData({
                           ...formData,
-                          rateCard: { ...formData.rateCard, story: Number(e.target.value) }
+                          rateCard: { ...(formData.rateCard || {}), story: Number(e.target.value) }
+                        })}
+                        className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-[10px]">Carousel (₹)</label>
+                      <input
+                        type="number"
+                        value={formData.rateCard?.carousel ?? ''}
+                        onChange={e => setFormData({
+                          ...formData,
+                          rateCard: { ...(formData.rateCard || {}), carousel: Number(e.target.value) }
+                        })}
+                        className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-[10px]">Ad Rights 30d (₹)</label>
+                      <input
+                        type="number"
+                        value={formData.rateCard?.adRights30d ?? ''}
+                        onChange={e => setFormData({
+                          ...formData,
+                          rateCard: { ...(formData.rateCard || {}), adRights30d: Number(e.target.value) }
+                        })}
+                        className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-[10px]">Ad Rights 90d (₹)</label>
+                      <input
+                        type="number"
+                        value={formData.rateCard?.adRights90d ?? ''}
+                        onChange={e => setFormData({
+                          ...formData,
+                          rateCard: { ...(formData.rateCard || {}), adRights90d: Number(e.target.value) }
                         })}
                         className="w-full bg-tech-card border border-tech-border rounded p-1.5 text-slate-200 font-mono"
                       />
@@ -573,7 +768,10 @@ export const InfluencersView: React.FC = () => {
                 <div className="flex justify-end gap-2 pt-2 border-t border-tech-border">
                   <button
                     type="button"
-                    onClick={() => setIsEditing(false)}
+                    onClick={() => {
+                      setIsEditing(false);
+                      if (selectedInf) setFormData(selectedInf);
+                    }}
                     className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg font-semibold"
                   >
                     Cancel
@@ -859,7 +1057,7 @@ export const InfluencersView: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-400 mb-1">Billing Address</label>
+                    <label className="block text-slate-400 mb-1">Address</label>
                     <input
                       type="text"
                       placeholder="Street, City, State, PIN"

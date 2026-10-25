@@ -907,44 +907,114 @@ export const SettingsView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div>
-                    <label className="block text-slate-400 mb-1">Reel Commercial (₹)</label>
+                    <label className="block text-slate-400 mb-1">Reel (₹)</label>
                     <input
                       type="number"
-                      value={infFormData.rateCard.reel}
+                      value={infFormData.rateCard?.reel ?? ''}
                       onChange={e =>
                         setInfFormData({
                           ...infFormData,
-                          rateCard: { ...infFormData.rateCard, reel: Number(e.target.value) }
+                          rateCard: { ...(infFormData.rateCard || {}), reel: Number(e.target.value) }
                         })
                       }
                       className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200 font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-400 mb-1">Collab Reel Commercial (₹)</label>
+                    <label className="block text-slate-400 mb-1">Collab Reel (₹)</label>
                     <input
                       type="number"
-                      value={infFormData.rateCard.collabReel}
+                      value={infFormData.rateCard?.collabReel ?? ''}
                       onChange={e =>
                         setInfFormData({
                           ...infFormData,
-                          rateCard: { ...infFormData.rateCard, collabReel: Number(e.target.value) }
+                          rateCard: { ...(infFormData.rateCard || {}), collabReel: Number(e.target.value) }
                         })
                       }
                       className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200 font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-400 mb-1">Store Visit Commercial (₹)</label>
+                    <label className="block text-slate-400 mb-1">Store Visit Reel (₹)</label>
                     <input
                       type="number"
-                      value={infFormData.rateCard.storeVisitReel}
+                      value={infFormData.rateCard?.storeVisitReel ?? ''}
                       onChange={e =>
                         setInfFormData({
                           ...infFormData,
-                          rateCard: { ...infFormData.rateCard, storeVisitReel: Number(e.target.value) }
+                          rateCard: { ...(infFormData.rateCard || {}), storeVisitReel: Number(e.target.value) }
+                        })
+                      }
+                      className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">UGC Video (₹)</label>
+                    <input
+                      type="number"
+                      value={infFormData.rateCard?.ugcVideo ?? ''}
+                      onChange={e =>
+                        setInfFormData({
+                          ...infFormData,
+                          rateCard: { ...(infFormData.rateCard || {}), ugcVideo: Number(e.target.value) }
+                        })
+                      }
+                      className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Story (₹)</label>
+                    <input
+                      type="number"
+                      value={infFormData.rateCard?.story ?? ''}
+                      onChange={e =>
+                        setInfFormData({
+                          ...infFormData,
+                          rateCard: { ...(infFormData.rateCard || {}), story: Number(e.target.value) }
+                        })
+                      }
+                      className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Carousel (₹)</label>
+                    <input
+                      type="number"
+                      value={infFormData.rateCard?.carousel ?? ''}
+                      onChange={e =>
+                        setInfFormData({
+                          ...infFormData,
+                          rateCard: { ...(infFormData.rateCard || {}), carousel: Number(e.target.value) }
+                        })
+                      }
+                      className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Ad Rights 30d (₹)</label>
+                    <input
+                      type="number"
+                      value={infFormData.rateCard?.adRights30d ?? ''}
+                      onChange={e =>
+                        setInfFormData({
+                          ...infFormData,
+                          rateCard: { ...(infFormData.rateCard || {}), adRights30d: Number(e.target.value) }
+                        })
+                      }
+                      className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Ad Rights 90d (₹)</label>
+                    <input
+                      type="number"
+                      value={infFormData.rateCard?.adRights90d ?? ''}
+                      onChange={e =>
+                        setInfFormData({
+                          ...infFormData,
+                          rateCard: { ...(infFormData.rateCard || {}), adRights90d: Number(e.target.value) }
                         })
                       }
                       className="w-full bg-[#0b0f17] border border-tech-border rounded p-2 text-slate-200 font-mono"

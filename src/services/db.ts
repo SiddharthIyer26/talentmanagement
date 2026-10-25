@@ -1433,22 +1433,39 @@ class DatabaseService {
   }
 
   public async saveInfluencer(influencer: Influencer): Promise<Influencer> {
+    // Prevent partial updates from accidentally overwriting unrelated fields
+    const idx = this.data.influencers.findIndex(i => i.id === influencer.id);
+    const existing = idx !== -1 ? this.data.influencers[idx] : null;
+    const mergedInfluencer: Influencer = existing
+      ? {
+          ...existing,
+          ...influencer,
+          bankDetails: {
+            ...(existing.bankDetails || {}),
+            ...(influencer.bankDetails || {})
+          },
+          rateCard: {
+            ...(existing.rateCard || {}),
+            ...(influencer.rateCard || {})
+          }
+        }
+      : influencer;
+
     try {
-      await saveInfluencerCloud(influencer);
+      await saveInfluencerCloud(mergedInfluencer);
     } catch (err: any) {
       console.warn('Notice saving influencer to cloud:', err?.message || err);
     }
 
     // Always update application state
-    const idx = this.data.influencers.findIndex(i => i.id === influencer.id);
     if (idx !== -1) {
-      this.data.influencers[idx] = influencer;
+      this.data.influencers[idx] = mergedInfluencer;
     } else {
-      this.data.influencers.push(influencer);
+      this.data.influencers.push(mergedInfluencer);
     }
     this.saveData();
     this.notifyListeners();
-    return influencer;
+    return mergedInfluencer;
   }
 
   public async deleteInfluencer(influencerId: string): Promise<boolean> {
