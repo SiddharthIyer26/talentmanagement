@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured, sanitizeDate, sanitizeNumber, safeUpsertWithSchemaFallback } from './supabase';
 import { Influencer, Campaign, Brand, Invoice } from '../types';
+import { formatToHumanDate, parseDateToISO } from '../utils/dateUtils';
 
 /**
  * Mappers between Supabase snake_case database rows and application camelCase models.
@@ -219,8 +220,8 @@ export function cloudToInvoice(row: any): Invoice {
     clientAddress: row.client_address || undefined,
     clientGstin: row.client_gstin || undefined,
     campaignName: row.campaign_name || undefined,
-    invoiceDate: row.invoice_date || '',
-    dueDate: row.due_date || undefined,
+    invoiceDate: row.invoice_date ? formatToHumanDate(row.invoice_date) : '',
+    dueDate: row.due_date ? formatToHumanDate(row.due_date) : (row.due_date || undefined),
     invoiceTo: row.invoice_to || '',
     paymentTo: row.payment_to || '',
     serviceDescription: row.service_description || '',
@@ -250,7 +251,7 @@ export function invoiceToCloud(inv: Partial<Invoice>): any {
     client_address: inv.clientAddress || null,
     client_gstin: inv.clientGstin || null,
     campaign_name: inv.campaignName || null,
-    invoice_date: sanitizeDate(inv.invoiceDate) || new Date().toISOString().split('T')[0],
+    invoice_date: sanitizeDate(inv.invoiceDate) || parseDateToISO(new Date()) || new Date().toISOString().split('T')[0],
     due_date: sanitizeDate(inv.dueDate),
     invoice_to: inv.invoiceTo || null,
     payment_to: inv.paymentTo || null,

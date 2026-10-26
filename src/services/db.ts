@@ -28,6 +28,7 @@ import {
   cloudToInvoice,
   cloudToBrand
 } from './cloudSync';
+import { formatToHumanDate, parseDateToISO, parseDateDetails, MONTH_NAMES } from '../utils/dateUtils';
 
 const LOCAL_STORAGE_KEY = 'talent_os_db_v1';
 
@@ -950,26 +951,21 @@ class DatabaseService {
 
     // Also include invoices if any
     (this.data.invoices || []).forEach(inv => {
-      if (inv.invoiceDate && typeof inv.invoiceDate === 'string' && inv.invoiceDate.includes('-')) {
-        const parts = inv.invoiceDate.split('-');
-        if (parts.length >= 2) {
-          const year = parts[0];
-          const monthIdx = parseInt(parts[1], 10) - 1;
-          if (monthIdx >= 0 && monthIdx < 12) {
-            monthSet.add(`${monthNames[monthIdx]} ${year}`);
-          }
-        }
+      const parsed = parseDateDetails(inv.invoiceDate);
+      if (parsed) {
+        monthSet.add(`${MONTH_NAMES[parsed.month - 1]} ${parsed.year}`);
       }
     });
 
     // Sort chronologically (earliest to latest)
+    const currentYear = new Date().getFullYear();
     return Array.from(monthSet).sort((a, b) => {
       const partsA = a.trim().split(' ');
       const partsB = b.trim().split(' ');
-      const yearA = parseInt(partsA[1] || '2026', 10);
-      const yearB = parseInt(partsB[1] || '2026', 10);
-      const monthA = monthNames.indexOf(partsA[0]);
-      const monthB = monthNames.indexOf(partsB[0]);
+      const yearA = parseInt(partsA[1] || String(currentYear), 10);
+      const yearB = parseInt(partsB[1] || String(currentYear), 10);
+      const monthA = MONTH_NAMES.indexOf(partsA[0] as any);
+      const monthB = MONTH_NAMES.indexOf(partsB[0] as any);
 
       if (yearA !== yearB) return yearA - yearB;
       return monthA - monthB;
@@ -1072,13 +1068,19 @@ class DatabaseService {
 
   public getNextInvoiceNumber(influencerId: string, dateOrYear?: string | number): string {
     const prefix = this.getInfluencerPrefix(influencerId);
-    let year = 2026;
-    if (typeof dateOrYear === 'number') {
+    let year = new Date().getFullYear();
+    if (typeof dateOrYear === 'number' && dateOrYear >= 1000 && dateOrYear <= 9999) {
       year = dateOrYear;
-    } else if (typeof dateOrYear === 'string' && dateOrYear.includes('-')) {
-      year = parseInt(dateOrYear.split('-')[0], 10) || 2026;
-    } else if (typeof dateOrYear === 'string' && dateOrYear.length === 4) {
-      year = parseInt(dateOrYear, 10) || 2026;
+    } else if (typeof dateOrYear === 'string') {
+      const parsed = parseDateDetails(dateOrYear);
+      if (parsed) {
+        year = parsed.year;
+      } else {
+        const yearMatch = dateOrYear.match(/\b(19\d\d|20\d\d)\b/);
+        if (yearMatch) {
+          year = parseInt(yearMatch[1], 10);
+        }
+      }
     }
 
     const prefixPattern = `${prefix}-${year}-`;
@@ -1114,7 +1116,7 @@ class DatabaseService {
     }
 
     const infId = invoiceData.influencerId || '';
-    const dateStr = invoiceData.invoiceDate || new Date().toISOString().split('T')[0];
+    const dateStr = formatToHumanDate(invoiceData.invoiceDate) || formatToHumanDate(new Date());
     const inf = this.getInfluencerById(infId);
     const camp = invoiceData.campaignId ? this.getCampaignById(invoiceData.campaignId) : undefined;
 
@@ -1126,6 +1128,10 @@ class DatabaseService {
         const updated: Invoice = {
           ...existing,
           ...invoiceData,
+          invoiceDate: dateStr,
+          dueDate: invoiceData.dueDate !== undefined
+            ? (parseDateToISO(invoiceData.dueDate) ? formatToHumanDate(invoiceData.dueDate) : invoiceData.dueDate)
+            : existing.dueDate,
           // Never change invoiceNumber on update
           invoiceNumber: existing.invoiceNumber
         };
@@ -1148,6 +1154,10 @@ class DatabaseService {
     const tdsAmount = invoiceData.tdsAmount ?? Math.round(amount * (tdsPercentage / 100));
     const finalAmount = invoiceData.finalAmount ?? Math.max(0, amount - tdsAmount);
 
+    const formattedDueDate = invoiceData.dueDate
+      ? (parseDateToISO(invoiceData.dueDate) ? formatToHumanDate(invoiceData.dueDate) : invoiceData.dueDate)
+      : (camp?.calculatedDueDate ? formatToHumanDate(camp.calculatedDueDate) : dateStr);
+
     const newInvoice: Invoice = {
       id: invoiceData.id || 'inv-' + Date.now(),
       invoiceNumber: finalInvNum,
@@ -1158,7 +1168,7 @@ class DatabaseService {
       brandManager: invoiceData.brandManager || camp?.contactPerson || '',
       campaignName: invoiceData.campaignName || camp?.campaignName || 'Campaign Deliverables',
       invoiceDate: dateStr,
-      dueDate: invoiceData.dueDate || camp?.calculatedDueDate || dateStr,
+      dueDate: formattedDueDate,
       invoiceTo: invoiceData.invoiceTo || camp?.brandName || 'Client',
       paymentTo: invoiceData.paymentTo || inf?.bankDetails?.accountName || inf?.name || 'Influencer',
       serviceDescription: invoiceData.serviceDescription || `${camp?.campaignName || 'Collaboration'} deliverables`,
@@ -1668,6 +1678,11 @@ class DatabaseService {
     const tdsAmount = Math.round(amount * (tdsPercentage / 100));
     const finalAmount = Math.max(0, amount - tdsAmount);
 
+    const formattedInvoiceDate = formatToHumanDate(invoiceDate) || formatToHumanDate(new Date());
+    const formattedDueDate = campaign.calculatedDueDate
+      ? formatToHumanDate(campaign.calculatedDueDate)
+      : (campaign.paymentDueDate ? formatToHumanDate(campaign.paymentDueDate) : undefined);
+
     const newInvoice: Invoice = {
       id: 'inv-' + Date.now(),
       invoiceNumber: invNum,
@@ -1677,8 +1692,8 @@ class DatabaseService {
       brandName: campaign.brandName,
       brandManager: campaign.contactPerson || '',
       campaignName: campaign.campaignName,
-      invoiceDate: invoiceDate || new Date().toISOString().split('T')[0],
-      dueDate: campaign.calculatedDueDate || campaign.paymentDueDate,
+      invoiceDate: formattedInvoiceDate,
+      dueDate: formattedDueDate,
       invoiceTo: invoiceTo || campaign.brandName,
       paymentTo: influencer?.bankDetails.accountName || influencer?.name || 'Talent Management',
       serviceDescription: serviceDescription || `${campaign.campaignName} deliverables`,

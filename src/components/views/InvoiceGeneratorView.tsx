@@ -1,8 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { db } from '../../services/db';
 import { pdfService } from '../../services/pdfService';
-import { FileText, Download, Sparkles, Check, ArrowLeft, Save } from 'lucide-react';
+import { FileText, Download, Sparkles, Check, ArrowLeft, Save, Calendar, AlertCircle } from 'lucide-react';
 import { Invoice } from '../../types';
+import {
+  formatToHumanDate,
+  parseDateToISO,
+  parseDateDetails,
+  getTodayHumanDate,
+  getOffsetHumanDate
+} from '../../utils/dateUtils';
 
 interface InvoiceGeneratorViewProps {
   initialCampaignId?: string;
@@ -38,18 +45,27 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
   const selectedInfluencer = db.getInfluencerById(selectedInfluencerId) || influencers[0];
   const selectedCampaign = db.getCampaignById(selectedCampaignId) || defaultCampaign;
 
+  const [invoiceDateText, setInvoiceDateText] = useState(() => {
+    if (existingInvoice?.invoiceDate) return formatToHumanDate(existingInvoice.invoiceDate);
+    return getTodayHumanDate();
+  });
+  const [dueDateText, setDueDateText] = useState(() => {
+    if (existingInvoice?.dueDate) return formatToHumanDate(existingInvoice.dueDate);
+    return getOffsetHumanDate(30);
+  });
+
+  const [invoiceDateError, setInvoiceDateError] = useState<string | null>(null);
+  const [dueDateError, setDueDateError] = useState<string | null>(null);
+
+  // Derived ISO strings for native date pickers (YYYY-MM-DD)
+  const invoiceDateISO = parseDateToISO(invoiceDateText) || '';
+  const dueDateISO = parseDateToISO(dueDateText) || '';
+
   // Invoice Number: if existing invoice use its number, else generate sequential format [Prefix]-[Year]-[0001]
   const [invoiceNumber, setInvoiceNumber] = useState(() => {
     if (existingInvoice) return existingInvoice.invoiceNumber;
-    return db.getNextInvoiceNumber(selectedInfluencerId);
+    return db.getNextInvoiceNumber(selectedInfluencerId, getTodayHumanDate());
   });
-
-  const [invoiceDateText, setInvoiceDateText] = useState(
-    existingInvoice?.invoiceDate || '21st August 2026'
-  );
-  const [dueDateText, setDueDateText] = useState(
-    existingInvoice?.dueDate || '20th September 2026'
-  );
 
   // Influencer / Creator Details
   const [influencerName, setInfluencerName] = useState(
@@ -126,11 +142,91 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
     setTdsAmount(Math.round(((newAmt * quantity) * tdsPercentage) / 100));
   };
 
+  // Date selection & validation handlers
+  const handleInvoiceDateSelect = (isoDate: string) => {
+    if (!isoDate) return;
+    const formatted = formatToHumanDate(isoDate);
+    setInvoiceDateText(formatted);
+    setInvoiceDateError(null);
+    if (!existingInvoice) {
+      const parsed = parseDateDetails(isoDate);
+      if (parsed) {
+        setInvoiceNumber(db.getNextInvoiceNumber(selectedInfluencerId, parsed.year));
+      }
+    }
+  };
+
+  const handleInvoiceDateTextChange = (val: string) => {
+    setInvoiceDateText(val);
+    if (!val.trim()) {
+      setInvoiceDateError('Invoice date is required');
+      return;
+    }
+    const parsed = parseDateDetails(val);
+    if (parsed) {
+      setInvoiceDateError(null);
+      if (!existingInvoice) {
+        setInvoiceNumber(db.getNextInvoiceNumber(selectedInfluencerId, parsed.year));
+      }
+    } else {
+      setInvoiceDateError('Invalid calendar date. Example: 21st August 2026');
+    }
+  };
+
+  const handleInvoiceDateBlur = () => {
+    if (invoiceDateText.trim()) {
+      const parsed = parseDateDetails(invoiceDateText);
+      if (parsed) {
+        setInvoiceDateText(formatToHumanDate(parsed.isoDate));
+        setInvoiceDateError(null);
+      }
+    }
+  };
+
+  const handleDueDateSelect = (isoDate: string) => {
+    if (!isoDate) return;
+    const formatted = formatToHumanDate(isoDate);
+    setDueDateText(formatted);
+    setDueDateError(null);
+  };
+
+  const handleDueDateTextChange = (val: string) => {
+    setDueDateText(val);
+    if (!val.trim()) {
+      setDueDateError(null);
+      return;
+    }
+    const isTerms = val.toLowerCase().includes('net') || val.toLowerCase().includes('receipt');
+    if (isTerms) {
+      setDueDateError(null);
+      return;
+    }
+    const parsed = parseDateDetails(val);
+    if (parsed) {
+      setDueDateError(null);
+    } else {
+      setDueDateError('Invalid calendar date. Example: 20th September 2026');
+    }
+  };
+
+  const handleDueDateBlur = () => {
+    if (dueDateText.trim()) {
+      const isTerms = dueDateText.toLowerCase().includes('net') || dueDateText.toLowerCase().includes('receipt');
+      if (!isTerms) {
+        const parsed = parseDateDetails(dueDateText);
+        if (parsed) {
+          setDueDateText(formatToHumanDate(parsed.isoDate));
+          setDueDateError(null);
+        }
+      }
+    }
+  };
+
   const handleInfluencerChange = (infId: string) => {
     setSelectedInfluencerId(infId);
     // If not editing an existing invoice, generate sequential number for the newly selected influencer
     if (!existingInvoice) {
-      setInvoiceNumber(db.getNextInvoiceNumber(infId));
+      setInvoiceNumber(db.getNextInvoiceNumber(infId, invoiceDateText));
     }
     const inf = db.getInfluencerById(infId);
     if (inf) {
@@ -165,9 +261,38 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
     }
   };
 
-  const saveInvoiceRecord = async () => {
+  const saveInvoiceRecord = async (): Promise<boolean> => {
+    if (!invoiceDateText.trim()) {
+      setInvoiceDateError('Invoice date is required');
+      alert('Invoice date is required. Please select or enter a valid date.');
+      return false;
+    }
+    const parsedInvoiceDate = parseDateDetails(invoiceDateText);
+    if (!parsedInvoiceDate) {
+      setInvoiceDateError('Invalid calendar date. Please enter a valid date (e.g. 21st August 2026).');
+      alert('Invalid invoice date: Please enter a genuine calendar date. Check month lengths and leap years.');
+      return false;
+    }
+
+    if (dueDateText.trim()) {
+      const isTerms = dueDateText.toLowerCase().includes('net') || dueDateText.toLowerCase().includes('receipt');
+      if (!isTerms) {
+        const parsedDueDate = parseDateDetails(dueDateText);
+        if (!parsedDueDate) {
+          setDueDateError('Invalid calendar date. Please enter a valid date (e.g. 20th September 2026).');
+          alert('Invalid due date: Please enter a genuine calendar date or standard term (e.g. 30 days net).');
+          return false;
+        }
+      }
+    }
+
     const totalGross = amount * quantity;
     const finalAmount = totalGross - tdsAmount;
+
+    const formattedInvoiceDate = formatToHumanDate(parsedInvoiceDate.isoDate);
+    const formattedDueDate = dueDateText.trim()
+      ? (parseDateToISO(dueDateText) ? formatToHumanDate(dueDateText) : dueDateText.trim())
+      : undefined;
 
     const invoiceData: Invoice = {
       id: existingInvoice?.id || `inv-${Date.now()}`,
@@ -180,8 +305,8 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
       campaignId: selectedCampaignId,
       campaignName: serviceDescription,
       serviceDescription,
-      invoiceDate: invoiceDateText,
-      dueDate: dueDateText,
+      invoiceDate: formattedInvoiceDate,
+      dueDate: formattedDueDate,
       amount: totalGross,
       tdsAmount,
       tdsPercentage,
@@ -194,15 +319,16 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
       await db.saveInvoice(invoiceData);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      return true;
     } catch (err: any) {
       alert(`Error saving invoice: ${err?.message || 'Database write rejected'}`);
+      return false;
     }
   };
 
   const handleDownloadPDF = async () => {
-    await saveInvoiceRecord();
-    const fullInvoiceTo = `${clientName}\n${clientAddress}\nGSTIN - ${clientGstin}`;
-    await db.generateInvoice(selectedCampaignId, invoiceDateText, fullInvoiceTo, serviceDescription);
+    const saved = await saveInvoiceRecord();
+    if (!saved) return;
     await pdfService.exportInvoice(invoiceNumber);
   };
 
@@ -314,27 +440,75 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
               />
             </div>
             <div>
-              <label className="block text-slate-400 mb-1">Date</label>
-              <input
-                type="text"
-                value={invoiceDateText}
-                onChange={e => setInvoiceDateText(e.target.value)}
-                className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded p-2"
-                placeholder="21st August 2026"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-400">Date *</label>
+                <span className="text-[10px] text-cyan-400 font-mono">Any Date / Year</span>
+              </div>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={invoiceDateText}
+                  onChange={e => handleInvoiceDateTextChange(e.target.value)}
+                  onBlur={handleInvoiceDateBlur}
+                  className={`w-full bg-[#0b0f17] border ${
+                    invoiceDateError ? 'border-rose-500 text-rose-200' : 'border-tech-border focus:border-cyan-400 text-slate-200'
+                  } rounded p-2 pr-9 text-xs transition-colors`}
+                  placeholder="e.g. 21st August 2026"
+                />
+                <div className="absolute right-2.5 flex items-center justify-center pointer-events-none text-slate-400">
+                  <Calendar className="w-4 h-4 text-cyan-400" />
+                </div>
+                <input
+                  type="date"
+                  value={invoiceDateISO}
+                  onChange={e => handleInvoiceDateSelect(e.target.value)}
+                  className="absolute right-2.5 w-5 h-5 opacity-0 cursor-pointer"
+                  title="Pick invoice date from calendar"
+                  tabIndex={-1}
+                />
+              </div>
+              {invoiceDateError && (
+                <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 flex-shrink-0" /> {invoiceDateError}
+                </p>
+              )}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-400 mb-1">Due Date</label>
-              <input
-                type="text"
-                value={dueDateText}
-                onChange={e => setDueDateText(e.target.value)}
-                className="w-full bg-[#0b0f17] border border-tech-border text-slate-200 rounded p-2"
-                placeholder="20th September 2026"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-400">Due Date</label>
+                <span className="text-[10px] text-slate-500 font-mono">No Min / Max</span>
+              </div>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={dueDateText}
+                  onChange={e => handleDueDateTextChange(e.target.value)}
+                  onBlur={handleDueDateBlur}
+                  className={`w-full bg-[#0b0f17] border ${
+                    dueDateError ? 'border-rose-500 text-rose-200' : 'border-tech-border focus:border-cyan-400 text-slate-200'
+                  } rounded p-2 pr-9 text-xs transition-colors`}
+                  placeholder="e.g. 20th September 2026"
+                />
+                <div className="absolute right-2.5 flex items-center justify-center pointer-events-none text-slate-400">
+                  <Calendar className="w-4 h-4 text-cyan-400" />
+                </div>
+                <input
+                  type="date"
+                  value={dueDateISO}
+                  onChange={e => handleDueDateSelect(e.target.value)}
+                  className="absolute right-2.5 w-5 h-5 opacity-0 cursor-pointer"
+                  title="Pick due date from calendar"
+                  tabIndex={-1}
+                />
+              </div>
+              {dueDateError && (
+                <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 flex-shrink-0" /> {dueDateError}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-slate-400 mb-1">Invoice Status</label>
@@ -581,7 +755,7 @@ export const InvoiceGeneratorView: React.FC<InvoiceGeneratorViewProps> = ({
                     Invoice No : <span className="font-medium">{invoiceNumber}</span>
                   </p>
                   <p className="text-xs text-black">
-                    Date : <span className="font-medium">{invoiceDateText}</span>
+                    Date : <span className="font-medium">{formatToHumanDate(invoiceDateText) || invoiceDateText}</span>
                   </p>
                   <div className="border-b border-black w-full pt-2" />
                 </div>

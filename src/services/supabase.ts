@@ -20,19 +20,18 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured()
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+import { parseDateToISO } from '../utils/dateUtils';
+
 /**
  * Sanitizes date values for PostgreSQL DATE columns.
- * Prevents "invalid input syntax for type date: ''" crashes.
+ * Converts valid human-readable (e.g. "21st August 2026") or ISO dates into YYYY-MM-DD format.
+ * Prevents "invalid input syntax for type date" crashes.
  */
 export function sanitizeDate(val?: string | null): string | null {
   if (!val || typeof val !== 'string') return null;
   const trimmed = val.trim();
   if (!trimmed) return null;
-  // If ISO string like 2026-08-15T00:00:00.000Z, extract YYYY-MM-DD
-  if (trimmed.includes('T')) {
-    return trimmed.split('T')[0];
-  }
-  return trimmed;
+  return parseDateToISO(trimmed);
 }
 
 /**
@@ -464,41 +463,36 @@ export async function migrateLocalStorageToSupabase(localData: DatabaseSchema): 
 
     // 5. Sync Invoices (With Complete Audit Details)
     if (localData.invoices && localData.invoices.length > 0) {
-      const { error: invErr } = await supabase
-        .from('invoices')
-        .upsert(
-          localData.invoices.map(inv => ({
-            id: inv.id,
-            invoice_number: inv.invoiceNumber,
-            campaign_id: inv.campaignId || null,
-            influencer_id: inv.influencerId,
-            influencer_name: inv.influencerName || null,
-            brand_id: inv.brandId || null,
-            brand_name: inv.brandName || inv.invoiceTo || null,
-            brand_manager: inv.brandManager || null,
-            client_name: inv.clientName || null,
-            client_address: inv.clientAddress || null,
-            client_gstin: inv.clientGstin || null,
-            campaign_name: inv.campaignName || null,
-            invoice_date: sanitizeDate(inv.invoiceDate) || new Date().toISOString().split('T')[0],
-            due_date: sanitizeDate(inv.dueDate),
-            invoice_to: inv.invoiceTo || null,
-            payment_to: inv.paymentTo || null,
-            service_description: inv.serviceDescription || null,
-            quantity: sanitizeNumber(inv.quantity, 1),
-            amount: sanitizeNumber(inv.amount, 0),
-            tds_percentage: sanitizeNumber(inv.tdsPercentage, 10),
-            tds_amount: sanitizeNumber(inv.tdsAmount, 0),
-            final_amount: sanitizeNumber(inv.finalAmount, 0),
-            total_due: sanitizeNumber(inv.totalDue || inv.finalAmount, 0),
-            payment_status: inv.paymentStatus || 'Issued',
-            generated_date: inv.generatedDate || new Date().toISOString(),
-            notes: inv.notes || null
-          })),
-          { onConflict: 'id' }
-        );
+      const invRows = localData.invoices.map(inv => ({
+        id: inv.id,
+        invoice_number: inv.invoiceNumber,
+        campaign_id: inv.campaignId || null,
+        influencer_id: inv.influencerId,
+        influencer_name: inv.influencerName || null,
+        brand_id: inv.brandId || null,
+        brand_name: inv.brandName || inv.invoiceTo || null,
+        brand_manager: inv.brandManager || null,
+        client_name: inv.clientName || null,
+        client_address: inv.clientAddress || null,
+        client_gstin: inv.clientGstin || null,
+        campaign_name: inv.campaignName || null,
+        invoice_date: sanitizeDate(inv.invoiceDate) || new Date().toISOString().split('T')[0],
+        due_date: sanitizeDate(inv.dueDate),
+        invoice_to: inv.invoiceTo || null,
+        payment_to: inv.paymentTo || null,
+        service_description: inv.serviceDescription || null,
+        quantity: sanitizeNumber(inv.quantity, 1),
+        amount: sanitizeNumber(inv.amount, 0),
+        tds_percentage: sanitizeNumber(inv.tdsPercentage, 10),
+        tds_amount: sanitizeNumber(inv.tdsAmount, 0),
+        final_amount: sanitizeNumber(inv.finalAmount, 0),
+        total_due: sanitizeNumber(inv.totalDue || inv.finalAmount, 0),
+        payment_status: inv.paymentStatus || 'Issued',
+        generated_date: inv.generatedDate || new Date().toISOString(),
+        notes: inv.notes || null
+      }));
 
-      if (invErr) throw new Error(`Invoices sync: ${invErr.message}`);
+      await safeUpsertWithSchemaFallback('invoices', invRows, 'id');
       counts.invoices = localData.invoices.length;
     }
 

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { db } from '../../services/db';
 import { pdfService } from '../../services/pdfService';
 import { Invoice } from '../../types';
+import { formatToHumanDate, parseDateDetails, MONTH_NAMES } from '../../utils/dateUtils';
 import {
   FileText,
   Search,
@@ -44,9 +45,9 @@ export const InvoicesManagementView: React.FC<InvoicesManagementViewProps> = ({
     const monthSet = new Set<string>();
     invoices.forEach(inv => {
       if (inv.invoiceDate) {
-        const d = new Date(inv.invoiceDate);
-        if (!isNaN(d.getTime())) {
-          const mLabel = d.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+        const parsed = parseDateDetails(inv.invoiceDate);
+        if (parsed) {
+          const mLabel = `${MONTH_NAMES[parsed.month - 1]} ${parsed.year}`;
           monthSet.add(mLabel);
         }
       }
@@ -69,10 +70,8 @@ export const InvoicesManagementView: React.FC<InvoicesManagementViewProps> = ({
 
       // Month filter
       if (selectedMonth !== 'ALL') {
-        const d = new Date(inv.invoiceDate);
-        const mLabel = !isNaN(d.getTime())
-          ? d.toLocaleString('en-IN', { month: 'long', year: 'numeric' })
-          : '';
+        const parsed = parseDateDetails(inv.invoiceDate);
+        const mLabel = parsed ? `${MONTH_NAMES[parsed.month - 1]} ${parsed.year}` : '';
         if (mLabel !== selectedMonth) {
           return false;
         }
@@ -98,7 +97,7 @@ export const InvoicesManagementView: React.FC<InvoicesManagementViewProps> = ({
   const summaryMetrics = useMemo(() => {
     const totalInvoices = filteredInvoices.length;
     const now = new Date();
-    const currentMonthLabel = now.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    const currentMonthLabel = `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
 
     let thisMonthCount = 0;
     let totalInvoiced = 0;
@@ -109,8 +108,8 @@ export const InvoicesManagementView: React.FC<InvoicesManagementViewProps> = ({
       const invFinal = inv.finalAmount || (inv.amount - (inv.tdsAmount || 0));
       totalInvoiced += invFinal;
 
-      const d = new Date(inv.invoiceDate);
-      if (!isNaN(d.getTime()) && d.toLocaleString('en-IN', { month: 'long', year: 'numeric' }) === currentMonthLabel) {
+      const parsed = parseDateDetails(inv.invoiceDate);
+      if (parsed && `${MONTH_NAMES[parsed.month - 1]} ${parsed.year}` === currentMonthLabel) {
         thisMonthCount++;
       }
 
@@ -346,7 +345,7 @@ export const InvoicesManagementView: React.FC<InvoicesManagementViewProps> = ({
 
                       {/* Date */}
                       <td className="py-3 px-4 text-slate-400 whitespace-nowrap">
-                        {inv.invoiceDate || '—'}
+                        {formatToHumanDate(inv.invoiceDate) || '—'}
                       </td>
 
                       {/* Amount */}
@@ -457,11 +456,11 @@ export const InvoicesManagementView: React.FC<InvoicesManagementViewProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase font-semibold">Invoice Date</span>
-                  <span className="text-slate-300">{previewInvoice.invoiceDate || '—'}</span>
+                  <span className="text-slate-300">{formatToHumanDate(previewInvoice.invoiceDate) || '—'}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase font-semibold">Due Date</span>
-                  <span className="text-slate-300">{previewInvoice.dueDate || '30 days net'}</span>
+                  <span className="text-slate-300">{formatToHumanDate(previewInvoice.dueDate) || previewInvoice.dueDate || '30 days net'}</span>
                 </div>
               </div>
 
